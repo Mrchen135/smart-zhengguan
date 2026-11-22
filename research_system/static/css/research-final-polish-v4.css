@@ -1,0 +1,259 @@
+﻿/* =========================================================
+   科研系统最终统一收尾 v4
+   仅做细节一致性，不改变业务结构与数据逻辑
+   参照 smartzhengguan 研究生管理系统
+   ========================================================= */
+
+/* 1. 全局节奏 */
+.content {
+  line-height: 1.5 !important;
+}
+
+.page-title {
+  min-height: 28px !important;
+  margin-bottom: 16px !important;
+}
+
+.card,
+.data-card,
+.stat-card,
+.analysis-card,
+.overview-card,
+.department-card,
+.personal-data-card,
+.filter-bar,
+.filter-bar-small,
+.achievement-toolbar,
+.project-toolbar,
+.fund-toolbar {
+  margin-bottom: 16px !important;
+}
+
+/* 2. 卡片标题统一 */
+.card-title {
+  min-height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 16px !important;
+  padding-bottom: 12px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: #1D2939 !important;
+  border-bottom: 1px solid #F0F0F0 !important;
+}
+
+/* 3. 统计卡数值/标签统一 */
+.data-card .label,
+.stat-card .label,
+.metric-label,
+.impact-metric .label {
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  color: #667085 !important;
+}
+
+.data-card .value,
+.stat-card .value,
+.metric-value,
+.impact-metric .num {
+  line-height: 1.2 !important;
+  font-weight: 700 !important;
+}
+
+/* 4. 查询区控件高度统一 */
+.filter-bar,
+.filter-bar-small,
+.achievement-toolbar,
+.project-toolbar,
+.fund-toolbar {
+  min-height: 58px !important;
+  gap: 12px !important;
+  padding: 12px 16px !important;
+  align-items: center !important;
+}
+
+.filter-select,
+.directory-search,
+.card-title .inline-filter,
+.achievement-toolbar input,
+.achievement-toolbar select,
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="date"],
+select {
+  min-height: 34px !important;
+}
+
+.btn,
+.achievement-btn,
+.directory-action,
+.primary-btn,
+.query-btn,
+.search-btn,
+.reset-btn,
+.export-btn {
+  min-height: 34px !important;
+  line-height: 32px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* 5. 表格密度统一 */
+table th,
+.project-table th,
+.rank-table th,
+.achievement-table th,
+.result-table th {
+  height: 42px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  vertical-align: middle !important;
+}
+
+table td,
+.project-table td,
+.rank-table td,
+.achievement-table td,
+.result-table td {
+  min-height: 40px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  vertical-align: middle !important;
+}
+
+/* 表格内部按钮保持紧凑 */
+table .btn,
+.project-table .btn,
+.achievement-table .achievement-action-btn,
+.result-table .btn,
+.directory-action {
+  min-height: 30px !important;
+  line-height: 28px !important;
+}
+
+/* 6. 分页统一 */
+.pagination,
+.achievement-pagination {
+  min-height: 36px !important;
+  margin-top: 16px !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+/* 7. 图表容器统一：白底、无额外厚重边框 */
+.chart-full,
+.chart-small,
+.chart-half,
+.chart,
+.chart-half-ring,
+.chart-half-bar {
+  width: 100% !important;
+  min-width: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+/* 普通图表常用高度，特殊页面已有更明确规则时由其专用 CSS 接管 */
+.chart-small { height: 260px !important; }
+.chart-half { height: 280px !important; }
+
+/* 图表标题上方避免过多空白 */
+.card > .chart-full:first-child,
+.card > .chart-half:first-child,
+.card > .chart-small:first-child {
+  margin-top: 0 !important;
+}
+
+/* 8. 弹窗与表单细节统一 */
+.achievement-modal,
+.modal,
+.dialog {
+  border-radius: 8px !important;
+}
+
+.achievement-modal-header,
+.modal-header {
+  min-height: 52px !important;
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
+}
+
+.achievement-modal-actions,
+.modal-actions {
+  min-height: 58px !important;
+}
+
+/* 9. 状态标签与徽标 */
+.demo-badge,
+.achievement-type-pill {
+  border-radius: 4px !important;
+}
+
+.high-risk,
+.medium-risk,
+.bg-green,
+.bg-yellow {
+  font-weight: 500 !important;
+}
+
+/* 10. 统一 hover，避免过度动画 */
+.card,
+.data-card,
+.stat-card,
+.analysis-card,
+.overview-card,
+.department-card,
+.achievement-btn,
+.btn,
+.directory-action {
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease !important;
+}
+
+/* 11. 四个学科页的最终微调 */
+.grid-three .stat-card {
+  min-height: 100px !important;
+}
+
+.grid-three .stat-card .num {
+  font-size: 24px !important;
+}
+
+.grid-three .stat-card .icon {
+  flex-shrink: 0 !important;
+}
+
+.grid,
+.grid-two,
+.grid-stack,
+.flex-row {
+  margin-bottom: 16px !important;
+}
+
+/* 12. 响应式收口 */
+@media (max-width: 1400px) {
+  .content {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .page-title {
+    font-size: 19px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-title {
+    font-size: 18px !important;
+  }
+
+  .filter-bar,
+  .filter-bar-small,
+  .achievement-toolbar,
+  .project-toolbar,
+  .fund-toolbar {
+    align-items: stretch !important;
+  }
+}
