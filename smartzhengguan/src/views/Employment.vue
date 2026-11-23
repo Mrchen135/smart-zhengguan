@@ -1,5 +1,10 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="employment-page">
+    <div class="employment-navigation">
+      <div><strong>就业统计分析</strong><span>查看学院毕业去向与就业趋势</span></div>
+      <el-button type="primary" @click="$router.push('/employment-opportunities')">进入就业与招考信息中心 →</el-button>
+    </div>
     <el-row :gutter="16" class="stat-row">
       <el-col :span="6" v-for="card in statCards" :key="card.title">
         <DashboardCard
@@ -91,16 +96,18 @@
       <div ref="regionChartRef" class="chart-box" style="height:360px"></div>
     </div>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import DashboardCard from '../components/DashboardCard.vue'
 import * as echarts from 'echarts'
-import { getEmploymentData } from '../services/mockDataService'
+import { getEmploymentData } from '../services/dataService'
+import { buildProvinceLookup, normalizeEmploymentRegions, employmentRegionTooltip } from '../utils/employmentMap'
 
 const LOCAL_CHINA_MAP_URL = '/maps-china-100000.json'
 const REMOTE_CHINA_MAP_URL = 'https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json'
-const NON_MAP_REGION_NAMES = new Set(['其他', '境外', '海外', '待更新', '未知'])
 
 const C = {
   primary: '#165DFF',
@@ -131,7 +138,7 @@ const EMPTY_PAGE_DATA = {
   },
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard },
   data() {
     return {
@@ -141,6 +148,7 @@ export default {
       sortProp: null,
       sortOrder: null,
       mapLoaded: false,
+      provinceLookup: {},
       trendChart: null,
       unitNatureChart: null,
       industryChart: null,
@@ -276,14 +284,14 @@ export default {
       if (!this.unitNatureChart) this.unitNatureChart = echarts.init(el)
       const data = [...(this.pageData.charts?.unitNature || [])].sort((left, right) => right.value - left.value)
       this.unitNatureChart.setOption({
-        tooltip: { trigger: 'axis', formatter: '{b}：{c}%' },
+        tooltip: { trigger: 'axis', formatter: '{b}：{c}人' },
         grid: { left: '3%', right: '12%', bottom: '3%', top: '5px', containLabel: true },
-        xAxis: { type: 'value', axisLabel: { color: '#86909C', fontSize: 11, formatter: '{value}%' }, splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } } },
+        xAxis: { type: 'value', axisLabel: { color: '#86909C', fontSize: 11, formatter: '{value}人' }, splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } } },
         yAxis: { type: 'category', inverse: true, data: data.map((item) => item.name), axisLabel: { color: '#333', fontSize: 12 }, axisLine: { lineStyle: { color: '#E5E7EB' } } },
         series: [{
           type: 'bar',
           barWidth: '50%',
-          label: { show: true, position: 'right', color: '#333', fontSize: 11, formatter: '{c}%' },
+          label: { show: true, position: 'right', color: '#333', fontSize: 11, formatter: '{c}人' },
           data: data.map((item) => ({
             value: item.value,
             itemStyle: {
@@ -303,14 +311,14 @@ export default {
       if (!this.industryChart) this.industryChart = echarts.init(el)
       const data = [...(this.pageData.charts?.industryTop || [])].sort((left, right) => right.value - left.value)
       this.industryChart.setOption({
-        tooltip: { trigger: 'axis', formatter: '{b}：{c}%' },
+        tooltip: { trigger: 'axis', formatter: '{b}：{c}人' },
         grid: { left: '3%', right: '12%', bottom: '3%', top: '5px', containLabel: true },
-        xAxis: { type: 'value', axisLabel: { color: '#86909C', fontSize: 11, formatter: '{value}%' }, splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } } },
+        xAxis: { type: 'value', axisLabel: { color: '#86909C', fontSize: 11, formatter: '{value}人' }, splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } } },
         yAxis: { type: 'category', inverse: true, data: data.map((item) => item.name), axisLabel: { color: '#333', fontSize: 12 }, axisLine: { lineStyle: { color: '#E5E7EB' } } },
         series: [{
           type: 'bar',
           barWidth: '50%',
-          label: { show: true, position: 'right', color: '#333', fontSize: 11, formatter: '{c}%' },
+          label: { show: true, position: 'right', color: '#333', fontSize: 11, formatter: '{c}人' },
           data: data.map((item) => ({
             value: item.value,
             itemStyle: {
@@ -354,6 +362,7 @@ export default {
       try {
         const geoJson = await this.fetchChinaMapJson()
         echarts.registerMap('china', geoJson)
+        this.provinceLookup = buildProvinceLookup(geoJson)
         this.mapLoaded = true
         this.initRegionChart()
       } catch (error) {
@@ -371,18 +380,14 @@ export default {
       }
 
       const allData = this.normalizeMapRegionData(this.provinceDistribution)
-      const top5 = this.normalizeMapRegionData(this.topProvinces).map((item) => ({
-        ...item,
-        label: { show: true, color: '#333', fontSize: 11, formatter: '{b}\n{c}人' },
-      }))
-      const otherData = allData.filter((item) => !this.topProvinces.some((top) => top.name === item.name))
       const maxValue = Math.max(...allData.map((item) => item.value), 0)
 
       this.regionChart.setOption({
-        tooltip: { trigger: 'item', formatter: '{b}<br/>就业人数：{c}人' },
+        tooltip: { trigger: 'item', formatter: employmentRegionTooltip },
         visualMap: {
           min: 0,
-          max: maxValue || 620,
+          max: maxValue || 1,
+          seriesIndex: 0,
           left: 10,
           bottom: 10,
           text: ['高', '低'],
@@ -394,22 +399,15 @@ export default {
           type: 'map',
           map: 'china',
           roam: false,
+          itemStyle: { areaColor: '#EEF1F5', borderColor: '#fff', borderWidth: 1 },
           label: { show: false },
           emphasis: { label: { show: true, color: '#333' }, itemStyle: { areaColor: '#FFE082' } },
-          data: [
-            ...top5.map((item) => ({ name: item.name, value: item.value })),
-            ...otherData,
-          ],
+          data: allData,
         }],
       }, true)
     },
     normalizeMapRegionData(regionData) {
-      return (regionData || [])
-        .filter((item) => item && item.name && !NON_MAP_REGION_NAMES.has(item.name))
-        .map((item) => ({
-          name: item.name,
-          value: Number(item.value || 0),
-        }))
+      return normalizeEmploymentRegions(regionData, this.provinceLookup)
     },
     async fetchChinaMapJson() {
       const sources = [LOCAL_CHINA_MAP_URL, REMOTE_CHINA_MAP_URL]
@@ -479,7 +477,7 @@ export default {
       })
     },
   },
-}
+})
 </script>
 
 <style scoped>
@@ -492,6 +490,9 @@ export default {
 }
 
 .employment-page { color: #333; }
+.employment-navigation { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.employment-navigation strong { font-size: 20px; color: #16345c; }
+.employment-navigation span { margin-left: 14px; color: #667085; font-size: 13px; }
 
 .stat-row { margin-bottom: 24px; }
 

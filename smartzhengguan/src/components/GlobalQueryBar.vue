@@ -1,4 +1,5 @@
 <template>
+  <el-alert v-if="optionsError" :title="optionsError" type="error" :closable="false"><el-button link @click="fetchOptions">重新加载筛选项</el-button></el-alert>
   <div class="section-card global-query-card">
     <div class="filter-row">
       <div class="filter-items">
@@ -27,13 +28,14 @@
 
 <script>
 import { gradeOptions, majorOptions, getQueryPlaceholderText, normalizeQueryFilters } from '../utils/queryData'
-import { getSharedOptions } from '../services/mockDataService'
+import { getSharedOptions } from '../services/dataService'
 
 export default {
   data() {
     return {
-      gradeOptions: [...gradeOptions],
-      majorOptions: [...majorOptions],
+      gradeOptions: [],
+      majorOptions: [],
+      optionsError: '',
       filters: {
         grade: '',
         major: '',
@@ -59,13 +61,12 @@ export default {
   },
   methods: {
     async fetchOptions() {
-      const response = await getSharedOptions()
-      if (Array.isArray(response?.grades) && response.grades.length) {
-        this.gradeOptions = response.grades
-      }
-      if (Array.isArray(response?.majors) && response.majors.length) {
-        this.majorOptions = response.majors
-      }
+      this.optionsError = ''
+      try {
+        const response = await getSharedOptions()
+        this.gradeOptions = response.grades || []
+        this.majorOptions = response.majors || []
+      } catch (error) { this.optionsError = error.message }
     },
     syncFromRoute() {
       const query = normalizeQueryFilters(this.$route.query)

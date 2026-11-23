@@ -37,6 +37,9 @@ from apps.graduate.models import (
 )
 
 
+from .portrait_report import cohort_facts
+from .portrait import summarize_destinations, latest_destinations, destination_state, DESTINATIONS, RESOLVED
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +86,11 @@ def prediction_allowed_models():
 
 
 def prediction_monthly_rows(snapshot):
-    return sorted(snapshot.monthly_metrics.all(), key=lambda item: item.month)
+    rows = sorted(snapshot.monthly_metrics.all(), key=lambda item: item.month)
+    if getattr(snapshot, 'data_source', '') == 'demo_portrait_v3':
+        end = snapshot.captured_at.strftime('%Y-%m')
+        return [row for row in rows if row.month <= end][-6:]
+    return rows
 
 
 def prediction_ai_capabilities():
@@ -241,167 +248,50 @@ def get_shared_options_data():
 
 
 def get_home_data():
-    annual_rows = list(HomeAnnualSummary.objects.all().order_by("year"))
-    grade_major_rows = list(HomeGradeMajorSummary.objects.all())
-    source_rows = list(HomeSourceRegionSummary.objects.all())
-
-    if annual_rows:
-        latest = annual_rows[-1]
-        gender_male = sum(item.male_count for item in grade_major_rows)
-        gender_female = sum(item.female_count for item in grade_major_rows)
-        grade_counter = Counter()
-        for item in grade_major_rows:
-            grade_counter[item.grade] += item.total_count
-
-        latest_update = max(
-            [item.updated_at for item in annual_rows]
-            + [item.updated_at for item in grade_major_rows]
-            + [item.updated_at for item in source_rows]
-        ).strftime("%Y-%m-%d %H:%M:%S")
-
-        return {
-            "updatedAt": latest_update,
-            "headline": {
-                "title": "研究生数据总览",
-                "subtitle": "基于首页汇总数据的研究生业务概览",
-                "totalStudents": latest.total_students,
-                "masterCount": latest.master_count,
-                "doctorCount": latest.doctor_count,
-                "internationalCount": latest.international_count,
-                "annualGraduates": latest.annual_graduates,
-            },
-            "statCards": [
-                {"title": "在读研究生总数", "number": latest.total_students, "icon": "users", "changeLabel": "首页年度汇总口径"},
-                {"title": "硕士研究生", "number": latest.master_count, "icon": "graduation", "changeLabel": "首页年度汇总口径"},
-                {"title": "博士研究生", "number": latest.doctor_count, "icon": "award", "changeLabel": "首页年度汇总口径"},
-                {"title": "国际学生", "number": latest.international_count, "icon": "world", "changeLabel": "首页年度汇总口径"},
-                {"title": "本年毕业生", "number": latest.annual_graduates, "icon": "briefcase", "changeLabel": "首页年度汇总口径"},
-                {
-                    "title": "已建模预测样本",
-                    "number": PredictionSnapshot.objects.count(),
-                    "icon": "radar",
-                    "changeLabel": "智能预测样本数量",
-                },
-            ],
-            "charts": {
-                "trend": [
-                    {
-                        "year": str(item.year),
-                        "master": item.master_count,
-                        "doctor": item.doctor_count,
-                    }
-                    for item in annual_rows
-                ],
-                "gender": [
-                    {"name": "男生", "value": gender_male},
-                    {"name": "女生", "value": gender_female},
-                ],
-                "grades": [
-                    {"name": grade, "value": value}
-                    for grade, value in sorted(grade_counter.items())
-                ],
-                "sourceRegions": [
-                    {"name": item.region, "value": item.student_count}
-                    for item in source_rows
-                ],
-            },
-            "notices": module_notice_items(ModuleCode.HOME, short_date=True),
-            "todos": [
-                {"label": "培养计划待审核", "count": TrainingPlan.objects.filter(status=WorkflowStatus.PENDING).count()},
-                {
-                    "label": "学籍异动办理中",
-                    "count": AcademicChangeRequest.objects.filter(status=WorkflowStatus.IN_PROGRESS).count(),
-                },
-                {"label": "答辩待确认", "count": DefenseSession.objects.exclude(status=WorkflowStatus.COMPLETED).count()},
-                {"label": "招生流程进行中", "count": in_progress_admission_stage_count()},
-                {"label": "高风险预测样本", "count": PredictionSnapshot.objects.filter(risk_level="high").count()},
-                {"label": "课程待处理", "count": CourseOffering.objects.filter(status=WorkflowStatus.PENDING).count()},
-                {
-                    "label": "学位申请待处理",
-                    "count": DegreeApplication.objects.exclude(award_status=WorkflowStatus.COMPLETED).count(),
-                },
-            ],
-        }
-
+    # One population for the headline and charts; current enrolment is shown separately.
     students = list(Student.objects.all())
-    total_students = len(students)
-    master_count = sum(1 for item in students if item.degree_type != DegreeType.DOCTORAL)
-    doctor_count = sum(1 for item in students if item.degree_type == DegreeType.DOCTORAL)
-    international_count = sum(1 for item in students if item.is_international)
-    annual_graduates = EmploymentRecord.objects.aggregate(value=Max("graduation_year"))["value"]
-    annual_graduate_count = (
-        EmploymentRecord.objects.filter(graduation_year=annual_graduates).count() if annual_graduates else 0
-    )
-
-    trend_map: dict[str, dict[str, int]] = defaultdict(lambda: {"master": 0, "doctor": 0})
-    grade_counter = Counter()
-    source_counter = Counter()
+    active = [s for s in students if s.current_status == StudentStatus.ACTIVE]
+    today = timezone.localdate()
+    annual_graduates = sum(bool(s.graduated_on) and s.graduated_on.year == today.year for s in students)
+    master_count = sum(s.degree_type != DegreeType.DOCTORAL for s in students)
+    doctor_count = sum(s.degree_type == DegreeType.DOCTORAL for s in students)
+    international_count = sum(s.is_international or s.enrollment_type == "international" for s in students)
+    trend_map = defaultdict(lambda: {"master": 0, "doctor": 0})
+    grade_counter, source_counter, gender_counter = Counter(), Counter(), Counter()
     for student in students:
-        year = extract_year_label(student.grade)
-        if student.degree_type == DegreeType.DOCTORAL:
-            trend_map[year]["doctor"] += 1
-        else:
-            trend_map[year]["master"] += 1
+        trend_map[student.grade]["doctor" if student.degree_type == DegreeType.DOCTORAL else "master"] += 1
         grade_counter[student.grade] += 1
-        if student.source_region:
-            source_counter[student.source_region] += 1
-
-    if not source_counter:
-        for record in EmploymentRecord.objects.all():
-            if record.province:
-                source_counter[record.province] += 1
-
-    gender_counts = derive_gender_counts(students)
-    latest_update = latest_business_timestamp()
-
+        source_counter[student.source_region or "未知"] += 1
+        gender_counter[student.gender] += 1
+    gender = [{"name": "男生", "value": gender_counter["男"]}, {"name": "女生", "value": gender_counter["女"]}]
+    unknown_gender = len(students) - gender_counter["男"] - gender_counter["女"]
+    if unknown_gender:
+        gender.append({"name": "未登记", "value": unknown_gender})
+    demo = bool(students) and all(s.profile_source.startswith("demo_") for s in students)
     return {
-        "updatedAt": latest_update,
+        "updatedAt": latest_business_timestamp(),
         "headline": {
-            "title": "研究生数据总览",
-            "subtitle": "基于后端演示数据的研究生业务概览",
-            "totalStudents": total_students,
+            "title": "学生档案总览",
+            "subtitle": f"含在读与毕业生 · 截至 {today.isoformat()}" + (" · 演示数据" if demo else ""),
+            "totalStudents": len(students),
             "masterCount": master_count,
             "doctorCount": doctor_count,
             "internationalCount": international_count,
-            "annualGraduates": annual_graduate_count,
+            "annualGraduates": annual_graduates,
         },
         "statCards": [
-            {"title": "在读研究生总数", "number": total_students, "icon": "users", "changeLabel": "来源于学生主表"},
-            {"title": "硕士研究生", "number": master_count, "icon": "graduation", "changeLabel": "学位类型汇总"},
-            {"title": "博士研究生", "number": doctor_count, "icon": "award", "changeLabel": "学位类型汇总"},
-            {
-                "title": "国际学生",
-                "number": international_count,
-                "icon": "world",
-                "changeLabel": "招生类型识别",
-            },
-            {
-                "title": "本年毕业去向记录",
-                "number": annual_graduate_count,
-                "icon": "briefcase",
-                "changeLabel": "按就业记录统计",
-            },
-            {
-                "title": "已建模预测样本",
-                "number": PredictionSnapshot.objects.count(),
-                "icon": "radar",
-                "changeLabel": "智能预测样本数量",
-            },
+            {"title": "当前在读", "number": len(active), "icon": "users", "changeLabel": "按学生主档在读状态统计"},
+            {"title": "在读硕士", "number": sum(s.degree_type != DegreeType.DOCTORAL for s in active), "icon": "graduation", "changeLabel": "当前在读硕士档案"},
+            {"title": "在读博士", "number": sum(s.degree_type == DegreeType.DOCTORAL for s in active), "icon": "award", "changeLabel": "当前在读博士档案"},
+            {"title": "在读国际学生", "number": sum(s.is_international or s.enrollment_type == "international" for s in active), "icon": "world", "changeLabel": "已包含在硕博人数中"},
+            {"title": "本年毕业生", "number": annual_graduates, "icon": "briefcase", "changeLabel": f"按 {today.year} 年毕业日期统计"},
+            {"title": "已建模预测样本", "number": PredictionSnapshot.objects.values("student_id").distinct().count(), "icon": "radar", "changeLabel": "全部档案，含毕业生，按人去重"},
         ],
         "charts": {
-            "trend": [
-                {"year": year, "master": values["master"], "doctor": values["doctor"]}
-                for year, values in sorted(trend_map.items(), key=lambda item: item[0])
-            ],
-            "gender": [
-                {"name": "男生", "value": gender_counts["male"]},
-                {"name": "女生", "value": gender_counts["female"]},
-            ],
-            "grades": [{"name": grade, "value": value} for grade, value in sorted(grade_counter.items())],
-            "sourceRegions": [
-                {"name": name, "value": value}
-                for name, value in source_counter.most_common(12)
-            ],
+            "trend": [{"year": grade, **values} for grade, values in sorted(trend_map.items())],
+            "gender": gender,
+            "grades": [{"name": grade, "value": count} for grade, count in sorted(grade_counter.items())],
+            "sourceRegions": [{"name": name, "value": count} for name, count in source_counter.most_common()],
         },
         "notices": module_notice_items(ModuleCode.HOME, short_date=True),
         "todos": [
@@ -541,9 +431,9 @@ def get_academic_status_data():
     grade_distribution = []
     total_for_grade = sum(grade_counts.values()) or 1
     for grade, count in sorted(grade_counts.items()):
-        male_ratio = 0.55 if count % 2 else 0.5
-        male = round(count * male_ratio * 100 / total_for_grade, 1)
-        female = round(count * 100 / total_for_grade - male, 1)
+        members = [student for student in students if student.grade == grade]
+        male = safe_percent(sum(student.gender == '男' for student in members), count)
+        female = safe_percent(sum(student.gender == '女' for student in members), count)
         grade_distribution.append({"grade": grade, "male": male, "female": female})
 
     status_counter = Counter(student_status_display(item.current_status) for item in students)
@@ -571,8 +461,8 @@ def get_academic_status_data():
             {"title": "休学/退学", "number": suspended_or_withdrawn, "changeLabel": "异常状态学生"},
             {
                 "title": "异动上报总数",
-                "number": sum(item.id for item in [0]) if False else changed_count * 560,
-                "changeLabel": "演示口径累计值",
+                "number": changed_count,
+                "changeLabel": "学籍异动事件表实际条数",
             },
         ],
         "charts": {
@@ -611,7 +501,7 @@ def get_academic_change_data():
         "title": "学籍异动管理",
         "subtitle": "围绕学籍异动申请、流转和审批状态进行管理",
         "updatedAt": latest_model_date(AcademicChangeRequest),
-        "primaryAction": {"label": "新建申请", "message": "后续可接入新增学籍异动申请"},
+        "primaryAction": {"label": "数据管理", "route": "/data-management"},
         "statCards": [
             {"title": "异动申请总数", "number": len(rows), "icon": "refresh", "changeLabel": "当前数据库记录数"},
             {"title": "办理中", "number": in_progress_count, "icon": "clock", "changeLabel": "流转中的申请"},
@@ -786,7 +676,7 @@ def get_training_course_data():
         title="课程管理",
         subtitle="围绕课程开设、排课和执行状态进行管理",
         updated_at=latest_model_date(CourseOffering),
-        primary_action={"label": "新增课程", "message": "后续可接入课程维护流程"},
+        primary_action={"label": "数据管理", "route": "/data-management"},
         stat_cards=[
             {"title": "课程总数", "number": len(rows), "icon": "book", "changeLabel": "课程表记录数"},
             {
@@ -930,7 +820,7 @@ def get_degree_defense_data():
         title="答辩管理",
         subtitle="围绕答辩场次、答辩安排和执行状态进行管理",
         updated_at=latest_model_date(DefenseSession),
-        primary_action={"label": "新增答辩场次", "message": "后续可接入答辩排期流程"},
+        primary_action={"label": "数据管理", "route": "/data-management"},
         stat_cards=[
             {"title": "答辩场次", "number": len(rows), "icon": "calendar", "changeLabel": "当前答辩安排数"},
             {
@@ -1067,7 +957,9 @@ def get_scholarship_data():
 
 
 def get_employment_data():
-    records = list(EmploymentRecord.objects.all())
+    all_records = list(latest_destinations(EmploymentRecord.objects.select_related('student').all()).values())
+    records = [r for r in all_records if r.student and destination_state(r.student, r) not in ('in_study', 'inactive')]
+    resolved = lambda r: destination_state(r.student, r) in RESOLVED
     year_counter = Counter(str(item.graduation_year) for item in records)
     sorted_years = sorted(year_counter.keys())
 
@@ -1077,14 +969,14 @@ def get_employment_data():
     for year in sorted_years:
         year_records = [item for item in records if str(item.graduation_year) == year]
         total = len(year_records) or 1
-        employment_rate = round(sum(1 for item in year_records if item.destination_type) * 100 / total, 1)
+        employment_rate = round(sum(1 for item in year_records if resolved(item)) * 100 / total, 1)
         signing_rate = round(sum(1 for item in year_records if item.is_signed) * 100 / total, 1)
         further_rate = round(sum(1 for item in year_records if item.is_further_study) * 100 / total, 1)
         employment_series.append({"year": year, "value": employment_rate})
         signing_series.append({"year": year, "value": signing_rate})
         further_study_series.append({"year": year, "value": further_rate})
 
-    destination_counter = Counter(item.destination_type for item in records)
+    destination_counter = Counter(DESTINATIONS[destination_state(item.student, item)] for item in all_records if item.student)
     unit_counter = Counter(item.unit_nature for item in records if item.unit_nature)
     industry_counter = Counter(item.industry for item in records if item.industry)
     province_counter = Counter(item.province for item in records if item.province)
@@ -1092,7 +984,7 @@ def get_employment_data():
 
     return {
         "statCards": [
-            {"title": "就业记录总数", "number": len(records), "unit": "人", "changeLabel": "就业记录数"},
+            {"title": "待跟踪及已落实人数", "number": len(records), "unit": "人", "changeLabel": "每人最新年度，排除在读及学籍异动"},
             {
                 "title": "签约人数",
                 "number": sum(1 for item in records if item.is_signed),
@@ -1106,14 +998,14 @@ def get_employment_data():
                 "changeLabel": "继续深造去向",
             },
             {
-                "title": "就业落实率",
-                "number": round(sum(1 for item in records if item.destination_type) * 100 / total_records, 1),
+                "title": "跟踪范围落实率",
+                "number": round(sum(1 for item in records if resolved(item)) * 100 / total_records, 1),
                 "unit": "%",
-                "changeLabel": "按就业记录口径",
+                "changeLabel": "已落实 / 待跟踪及已落实人数",
             },
         ],
         "metrics": [
-            {"key": "employment", "label": "就业率", "unit": "%", "series": employment_series},
+            {"key": "employment", "label": "跟踪范围落实率", "unit": "%", "series": employment_series},
             {"key": "signing", "label": "签约率", "unit": "%", "series": signing_series},
             {"key": "furtherStudy", "label": "升学率", "unit": "%", "series": further_study_series},
         ],
@@ -1121,14 +1013,14 @@ def get_employment_data():
             "unitNature": [{"name": name, "value": value} for name, value in unit_counter.most_common(5)],
             "industryTop": [{"name": name, "value": value} for name, value in industry_counter.most_common(7)],
             "destinationStats": [
-                {"type": name, "count": value, "percent": round(value * 100 / total_records, 1)}
-                for name, value in destination_counter.most_common(5)
+                {"type": name, "count": value, "percent": round(value * 100 / (len(all_records) or 1), 1)}
+                for name, value in destination_counter.most_common()
             ],
             "infoStats": [
-                {"label": "已填去向", "value": sum(1 for item in records if item.destination_type), "valueNum": sum(1 for item in records if item.destination_type)},
+                {"label": "已填去向", "value": sum(1 for item in records if resolved(item)), "valueNum": sum(1 for item in records if resolved(item))},
                 {"label": "已签约", "value": sum(1 for item in records if item.is_signed), "valueNum": sum(1 for item in records if item.is_signed)},
                 {"label": "升学深造", "value": sum(1 for item in records if item.is_further_study), "valueNum": sum(1 for item in records if item.is_further_study)},
-                {"label": "待完善", "value": sum(1 for item in records if not item.destination_type), "valueNum": sum(1 for item in records if not item.destination_type)},
+                {"label": "待完善", "value": sum(1 for item in records if not resolved(item)), "valueNum": sum(1 for item in records if not resolved(item))},
             ],
             "provinceDistribution": [{"name": name, "value": value} for name, value in province_counter.most_common(10)],
         },
@@ -1923,6 +1815,10 @@ def get_intelligent_prediction_chat(student_id, question, chat_history=None, exp
 
 def serialize_prediction_student(snapshot):
     student = snapshot.student
+    record = getattr(student, '_portrait_employment', None)
+    plan = getattr(student, '_portrait_plan', None)
+    state = destination_state(student, record)
+    destination_label = DESTINATIONS.get(state, '未知')
     return {
         "studentId": student.student_id,
         "name": student.name,
@@ -1931,6 +1827,19 @@ def serialize_prediction_student(snapshot):
         "degreeType": degree_type_display(student.degree_type),
         "college": prediction_student_scope_college(student),
         "advisorName": student.advisor_name,
+        "gender": student.gender,
+        "destination": destination_label,
+        "destinationKey": state,
+        "employer": record.employer_name if record else "",
+        "employmentIndustry": record.industry if record else "",
+        "employmentProvince": record.province if record else "",
+        "sourceRegion": student.source_region,
+        "enrolledOn": str(student.enrolled_on or ''),
+        "graduatedOn": str(student.graduated_on or ''),
+        "expectedGraduationDate": str(student.expected_graduation_date or ''),
+        "requiredCredits": student.required_credits,
+        "recordKind": 'demonstration' if student.profile_source.startswith('demo_') else 'imported',
+        "trainingStage": plan.stage if plan else ('培养完成' if student.current_status == 'graduated' else '培养中'),
         "currentStatus": student_status_display(student.current_status),
     }
 
@@ -3581,6 +3490,8 @@ def module_notice_items(module_code, short_date=False, include_read=False):
     items = []
     for notice in ModuleNotice.objects.filter(module=module_code)[:5]:
         item = {
+            "id": notice.pk,
+            "content": notice.content,
             "title": notice.title,
             "date": format_date_label(notice.notice_date, short_date=short_date),
             "url": notice.url if notice.url else ""
@@ -3639,11 +3550,7 @@ def extract_year_label(grade):
 def derive_gender_counts(students):
     male = sum(1 for item in students if item.gender == "男")
     female = sum(1 for item in students if item.gender == "女")
-    if male or female:
-        return {"male": male, "female": female}
-
-    total = len(students)
-    return {"male": round(total * 0.58), "female": total - round(total * 0.58)}
+    return {"male": male, "female": female}
 
 
 def in_progress_admission_stage_count():
@@ -3672,6 +3579,7 @@ def degree_type_display(value):
 def student_status_display(value):
     return {
         StudentStatus.ACTIVE: "正常在籍",
+        StudentStatus.GRADUATED: "已毕业",
         StudentStatus.SUSPENDED: "休学",
         StudentStatus.WITHDRAWN: "退学",
         StudentStatus.EXTENDED: "延期毕业",
@@ -3691,6 +3599,7 @@ def academic_status_text(status):
     return {
         WorkflowStatus.IN_PROGRESS: "办理中",
         WorkflowStatus.COMPLETED: "已通过",
+        WorkflowStatus.APPROVED: "已通过",
         WorkflowStatus.PENDING: "待审核",
         WorkflowStatus.REJECTED: "已退回",
         WorkflowStatus.DRAFT: "待提交",
@@ -4104,6 +4013,7 @@ def build_cross_module_context():
     employment_records = list(EmploymentRecord.objects.select_related("student").all())
     training_plans = list(TrainingPlan.objects.all())
     degree_applications = list(DegreeApplication.objects.select_related("student").all())
+    snapshots = list(PredictionSnapshot.objects.select_related("student").all())
 
     population_map = {}
     for row in home_rows:
@@ -4117,22 +4027,15 @@ def build_cross_module_context():
     students_by_pair = defaultdict(list)
     for student in students:
         students_by_pair[(student.grade, student.major)].append(student)
-        population = population_map.setdefault(
-            (student.grade, student.major),
-            {
-                "totalStudents": 0,
-                "maleCount": 0,
-                "femaleCount": 0,
-                "updatedAt": student.updated_at,
-            },
-        )
-        if not home_rows:
-            population["totalStudents"] += 1
-            if student.gender == "女":
-                population["femaleCount"] += 1
-            else:
-                population["maleCount"] += 1
-        population["updatedAt"] = max(population["updatedAt"], student.updated_at)
+    # Student records are authoritative when present; imported summary rows are
+    # used only for groups that have no individual records.
+    for key, members in students_by_pair.items():
+        population_map[key] = {
+            'totalStudents': len(members),
+            'maleCount': sum(s.gender == '男' for s in members),
+            'femaleCount': sum(s.gender == '女' for s in members),
+            'updatedAt': max(s.updated_at for s in members),
+        }
 
     awards_by_pair = defaultdict(list)
     for award in awards:
@@ -4156,6 +4059,9 @@ def build_cross_module_context():
         if key:
             degree_by_pair[key].append(application)
 
+    snapshots_by_pair = defaultdict(list)
+    for snapshot in snapshots:
+        snapshots_by_pair[(snapshot.student.grade, snapshot.student.major)].append(snapshot)
     keys = sorted(
         set(population_map.keys())
         | set(awards_by_pair.keys())
@@ -4166,6 +4072,7 @@ def build_cross_module_context():
     )
 
     return {
+        "snapshots_by_pair": snapshots_by_pair,
         "population_map": population_map,
         "students_by_pair": students_by_pair,
         "awards_by_pair": awards_by_pair,
@@ -4201,7 +4108,7 @@ def build_cross_module_row(key, context):
     if total_students <= 0:
         student_rows = context["students_by_pair"].get(key, [])
         total_students = len(student_rows)
-        male_count = sum(1 for item in student_rows if item.gender != "女")
+        male_count = sum(1 for item in student_rows if item.gender == "男")
         female_count = sum(1 for item in student_rows if item.gender == "女")
 
     if total_students <= 0:
@@ -4213,30 +4120,20 @@ def build_cross_module_row(key, context):
     degree_rows = context["degree_by_pair"].get(key, [])
 
     award_students = unique_entity_keys(award_rows, lambda item: entity_key(item.student, item.student_name))
-    employed_students = unique_entity_keys(
-        [item for item in employment_rows if item.destination_type],
-        lambda item: entity_key(item.student, item.student_name),
-    )
-    contract_students = unique_entity_keys(
-        [item for item in employment_rows if item.is_signed],
-        lambda item: entity_key(item.student, item.student_name),
-    )
-    further_students = unique_entity_keys(
-        [item for item in employment_rows if item.is_further_study],
-        lambda item: entity_key(item.student, item.student_name),
-    )
-    flexible_students = unique_entity_keys(
-        [item for item in employment_rows if "灵活" in str(item.destination_type or "")],
-        lambda item: entity_key(item.student, item.student_name),
-    )
-
+    members = context['students_by_pair'].get(key, [])
+    destinations = summarize_destinations(members, employment_rows)
+    if not members:
+        destinations = [{'key': 'verify', 'label': '去向待核实', 'count': total_students}]
+    counts = {item['key']: item['count'] for item in destinations}
+    latest = latest_destinations(employment_rows)
     award_count = min(len(award_students), total_students)
-    employed_count = min(len(employed_students), total_students)
-    contract_count = min(len(contract_students), total_students)
-    further_count = min(len(further_students), total_students)
-    flexible_count = min(len(flexible_students), total_students)
-    unemployment_count = max(total_students - employed_count, 0)
+    employed_count = sum(counts.get(key, 0) for key in RESOLVED)
+    contract_count = sum(bool(r.is_signed) and destination_state(r.student, r) in RESOLVED for r in latest.values())
+    further_count = counts.get('study', 0)
+    flexible_count = counts.get('flexible', 0)
+    unemployment_count = counts.get('unresolved', 0)
 
+    portrait_facts = cohort_facts(members, training_rows, degree_rows, context.get('snapshots_by_pair', {}).get(key, []), employment_rows)
     award_rate = safe_percent(award_count, total_students)
     employment_rate = safe_percent(employed_count, total_students)
     contract_rate = safe_percent(contract_count, total_students)
@@ -4244,17 +4141,12 @@ def build_cross_module_row(key, context):
     flexible_rate = safe_percent(flexible_count, total_students)
     unemployment_rate = safe_percent(unemployment_count, total_students)
 
-    if training_rows:
-        training_completion_rate = round(
-            sum(int(item.completion_percent or 0) for item in training_rows) / max(total_students, len(training_rows)),
-            1,
-        )
-    else:
-        training_completion_rate = 0
-
-    degree_progress_rate = degree_progress_from_rows(degree_rows, total_students)
+    training_completion_rate = portrait_facts['trainingObservedAverage'] or 0
+    degree_progress_rate = portrait_facts['degreeObservedAverage']
+    if degree_progress_rate is None:
+        degree_progress_rate = degree_progress_from_rows(degree_rows, total_students)
     male_ratio = safe_percent(male_count, total_students)
-    female_ratio = round(100 - male_ratio, 1)
+    female_ratio = safe_percent(female_count, total_students)
     gender_balance_score = round(100 - abs(male_ratio - 50) * 2, 1)
     composite_score = round(
         award_rate * 0.28 +
@@ -4273,6 +4165,7 @@ def build_cross_module_row(key, context):
     updated_at = max((item for item in updated_values if item), default=None)
 
     return {
+        **portrait_facts,
         "id": f"{key[0]}-{key[1]}",
         "grade": key[0],
         "major": key[1],
@@ -4284,6 +4177,19 @@ def build_cross_module_row(key, context):
         "genderRatioText": f"{male_count}:{female_count}",
         "awardCount": award_count,
         "awardRate": award_rate,
+        "destinations": destinations,
+        "destinationTrackingCount": len(set(latest) & {s.pk for s in members}),
+        "destinationVerifiedCount": employed_count + unemployment_count,
+        "destinationPendingCount": counts.get('verify', 0),
+        "inStudyCount": counts.get('in_study', 0),
+        "civilServiceCount": counts.get('civil_service', 0),
+        "unknownDestinationCount": counts.get('unknown', 0),
+        "demoDestinationCount": sum(r.data_source.startswith('demo_') for r in latest.values()),
+        "unresolvedCount": unemployment_count,
+        "genderMissingCount": total_students - male_count - female_count,
+        "demoGenderCount": sum(s.gender_source.startswith('demo_') for s in members),
+        "trainingCoverageCount": len({p.student_id for p in training_rows if p.student_id}),
+        "degreeCoverageCount": len({p.student_id for p in degree_rows if p.student_id}),
         "employedCount": employed_count,
         "employmentRate": employment_rate,
         "furtherStudyRate": further_rate,
@@ -4316,7 +4222,7 @@ def build_cross_module_detail_modules(row, context):
         {"item": "男生人数", "value": f'{row["maleCount"]}人', "rate": f'{row["maleRatio"]}%', "note": "男生占比"},
         {"item": "女生人数", "value": f'{row["femaleCount"]}人', "rate": f'{row["femaleRatio"]}%', "note": "女生占比"},
         {"item": "获奖率", "value": f'{row["awardRate"]}%', "rate": f'{row["awardCount"]}人', "note": "有奖助记录的学生覆盖率"},
-        {"item": "就业率", "value": f'{row["employmentRate"]}%', "rate": f'{row["employedCount"]}人', "note": "已落实去向学生占比"},
+        {"item": "已落实去向占比", "value": f'{row["employmentRate"]}%', "rate": f'{row["employedCount"]}人', "note": "已落实人数 / 查询总人数，非毕业生就业率"},
         {"item": "培养完成率", "value": f'{row["trainingCompletionRate"]}%', "rate": row["diagnosisLabel"], "note": "培养计划平均完成情况"},
         {"item": "学位进度", "value": f'{row["degreeProgressRate"]}%', "rate": f'{row["compositeScore"]}分', "note": "学位流程整体推进度"},
     ]
@@ -4338,23 +4244,12 @@ def build_cross_module_detail_modules(row, context):
     if not scholarship_rows:
         scholarship_rows.append({"item": "暂无奖助记录", "value": "-", "rate": "-", "note": "数据库中未找到该对象奖助数据"})
 
-    destination_group = defaultdict(list)
-    for record in employment_rows:
-        destination_group[record.destination_type or "未填报去向"].append(record)
-    employment_table_rows = []
-    for destination, items in sorted(destination_group.items(), key=lambda item: (-len(item[1]), item[0])):
-        unique_students = unique_entity_keys(items, lambda item: entity_key(item.student, item.student_name))
-        signed_count = len(unique_entity_keys([item for item in items if item.is_signed], lambda item: entity_key(item.student, item.student_name)))
-        employment_table_rows.append(
-            {
-                "item": destination,
-                "value": f"{len(unique_students)}人",
-                "rate": f"{safe_percent(len(unique_students), row['totalStudents'])}%",
-                "note": f"其中签约 {signed_count} 人",
-            }
-        )
-    if not employment_table_rows:
-        employment_table_rows.append({"item": "暂无就业记录", "value": "-", "rate": "-", "note": "数据库中未找到该对象就业数据"})
+    employment_table_rows = [
+        {'item': item['label'], 'value': f"{item['count']}人",
+         'rate': f"{safe_percent(item['count'], row['totalStudents'])}%",
+         'note': '按学生取最新年度记录，每人仅归入一种状态；分母为查询总人数'}
+        for item in row['destinations'] if item['count']
+    ]
 
     training_group = defaultdict(list)
     for plan in training_rows:
@@ -4909,13 +4804,18 @@ def build_prediction_sources():
         .filter(Q(student__college=PREDICTION_SCOPE_COLLEGE) | Q(student__college="") | Q(student__college__isnull=True))
         .order_by("student__student_id", "-captured_at", "-updated_at")
     )
+    from .portrait_report import latest_rows
+    employment_by_student = latest_destinations(EmploymentRecord.objects.all())
+    plans_by_student = latest_rows(TrainingPlan.objects.all())
     latest_snapshot_by_student_id = {}
     for snapshot in raw_snapshots:
         if not prediction_snapshot_in_scope(snapshot):
             continue
+        snapshot.student._portrait_employment = employment_by_student.get(snapshot.student_id)
+        snapshot.student._portrait_plan = plans_by_student.get(snapshot.student_id)
         latest_snapshot_by_student_id.setdefault(snapshot.student_id, snapshot)
 
     return [
-        latest_snapshot_by_student_id.get(student.id) or build_virtual_prediction_snapshot(student)
-        for student in students
+        latest_snapshot_by_student_id[student.id]
+        for student in students if student.id in latest_snapshot_by_student_id
     ]

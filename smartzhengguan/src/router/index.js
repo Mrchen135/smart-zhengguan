@@ -1,3 +1,4 @@
+import { getAccessToken, clearSession } from '../services/apiClient'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Home from '../views/Home.vue'
 import AcademicStatus from '../views/AcademicStatus.vue'
@@ -29,8 +30,10 @@ const routes = [
   { path: '/degree', component: Degree, meta: { requiresAuth: true } },
   { path: '/degree-defense', component: DegreeDefense, meta: { requiresAuth: true } },
   { path: '/intelligent-prediction', component: IntelligentPrediction, meta: { requiresAuth: true } },
+  { path: '/privacy-collaboration', component: () => import('../views/PrivacyCollaboration.vue'), meta: { requiresAuth: true } },
   { path: '/scholarship', component: Scholarship, meta: { requiresAuth: true } },
   { path: '/employment', component: Employment, meta: { requiresAuth: true } },
+  { path: '/employment-opportunities', component: () => import('../views/EmploymentHub.vue'), meta: { requiresAuth: true } },
   { path: '/query-results', component: QueryResults, meta: { requiresAuth: true } },
   { path: '/search', component: SearchResults, meta: { requiresAuth: true } },
   { path: '/data-management', component: DataManagement, meta: { requiresAuth: true } },
@@ -46,7 +49,8 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
+  if (!token) clearSession()
 
   if (to.path === '/login' && token) {
     return '/home'

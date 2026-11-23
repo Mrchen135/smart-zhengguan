@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div v-if="pageData" class="password-page">
     <div class="page-header">
       <div class="header-left">
@@ -26,7 +27,7 @@
             <el-form-item>
               <div class="form-actions">
                 <el-button @click="resetForm">重置</el-button>
-                <el-button type="primary" class="primary-btn" @click="submitPassword">确认修改</el-button>
+                <el-button type="primary" class="primary-btn" :loading="saving" @click="submitPassword">确认修改</el-button>
               </div>
             </el-form-item>
           </el-form>
@@ -67,15 +68,20 @@
       </el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
-import { getChangePasswordData } from '../services/mockDataService'
+import { withDatabasePage } from '../utils/databasePage'
+import { changePassword } from '../services/accountService'
+import { clearSession } from '../services/apiClient'
+import { getChangePasswordData } from '../services/dataService'
 
-export default {
+export default withDatabasePage({
   data() {
     return {
       pageData: null,
+      saving: false,
       form: {
         currentPassword: '',
         newPassword: '',
@@ -94,31 +100,19 @@ export default {
         confirmPassword: '',
       }
     },
-    submitPassword() {
-      const storedPassword = localStorage.getItem('mock-password') || '123456'
-      if (!this.form.currentPassword || !this.form.newPassword || !this.form.confirmPassword) {
-        this.$message.warning('请完整填写密码信息')
-        return
-      }
-      if (this.form.currentPassword !== storedPassword) {
-        this.$message.error('当前密码不正确')
-        return
-      }
-      if (this.form.newPassword.length < 6) {
-        this.$message.warning('新密码长度不能少于 6 位')
-        return
-      }
-      if (this.form.newPassword !== this.form.confirmPassword) {
-        this.$message.warning('两次输入的新密码不一致')
-        return
-      }
-      localStorage.setItem('mock-password', this.form.newPassword)
-      localStorage.removeItem('token')
-      this.$message.success('密码修改成功，请重新登录')
-      this.$router.push({ path: '/login', query: { changed: '1' } })
+    async submitPassword() {
+      if (this.saving) return
+      this.saving = true
+      try {
+        await changePassword(this.form)
+        clearSession()
+        this.resetForm()
+        await this.$router.push({ path: '/login', query: { changed: '1' } })
+      } catch (error) { this.$message.error(error.message) }
+      finally { this.saving = false }
     },
   },
-}
+})
 </script>
 
 <style scoped>

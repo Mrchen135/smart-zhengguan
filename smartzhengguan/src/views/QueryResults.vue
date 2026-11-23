@@ -15,6 +15,7 @@
       <el-skeleton :rows="6" animated />
     </div>
 
+    <el-result v-else-if="loadError" icon="error" title="画像数据加载失败" :sub-title="loadError"><template #extra><el-button type="primary" @click="fetchPageData">重新加载</el-button></template></el-result>
     <div v-else-if="!hasQuery" class="section-card empty-card">
       <el-empty description="请选择年级或专业后查看跨模块画像分析结果" />
     </div>
@@ -27,7 +28,11 @@
       <el-empty description="当前筛选条件下暂无可比较的真实业务数据" />
     </div>
 
-    <template v-else-if="singleProfileMode">
+    <template v-else>
+      <CohortPortrait :rows="portraitRows" :scope="conditionText" :updated-at="latestUpdatedAt" />
+      <el-collapse class="portrait-legacy">
+        <el-collapse-item title="查看基础统计与分模块业务明细" name="legacy">
+    <template v-if="singleProfileMode">
       <div class="stats-grid">
         <DashboardCard
           v-for="card in detailStatCards"
@@ -63,7 +68,7 @@
             <span class="metric-note">{{ focusRow.awardCount }}人有奖助记录</span>
           </div>
           <div class="focus-metric">
-            <span class="metric-label">就业率</span>
+            <span class="metric-label">已落实去向占比</span>
             <span class="metric-value">{{ formatRate(focusRow.employmentRate) }}</span>
             <span class="metric-note">{{ focusRow.employedCount }}人已有去向</span>
           </div>
@@ -105,7 +110,7 @@
           <el-tag effect="plain" type="info">综合评分：{{ focusRow.compositeScore }}分</el-tag>
           <el-tag effect="plain" type="success">平均薪资：{{ formatAmount(focusRow.averageSalary) }}</el-tag>
           <el-tag effect="plain" type="warning">升学深造率：{{ formatRate(focusRow.furtherStudyRate) }}</el-tag>
-          <el-tag effect="plain" type="danger">未就业率：{{ formatRate(focusRow.unemploymentRate) }}</el-tag>
+          <el-tag effect="plain" type="danger">明确未落实占比：{{ formatRate(focusRow.unemploymentRate) }}</el-tag>
         </div>
         <div class="insight-list">
           <div v-for="(item, index) in singleProfileInsightMessages" :key="item" class="insight-item">
@@ -159,7 +164,7 @@
           <ChartCard title="男女比例对比" :chartOptions="comparisonGenderChartOptions" chartHeight="360px" />
         </el-col>
         <el-col :span="14">
-          <ChartCard title="获奖率与就业率分布" :chartOptions="comparisonScatterChartOptions" chartHeight="360px" />
+          <ChartCard title="获奖率与已落实去向占比分布" :chartOptions="comparisonScatterChartOptions" chartHeight="360px" />
         </el-col>
       </el-row>
 
@@ -174,7 +179,7 @@
         </div>
         <div class="summary-tags">
           <el-tag effect="plain" type="info">平均获奖率：{{ formatRate(summary.averageAwardRate) }}</el-tag>
-          <el-tag effect="plain" type="success">平均就业率：{{ formatRate(summary.averageEmploymentRate) }}</el-tag>
+          <el-tag effect="plain" type="success">平均已落实去向占比：{{ formatRate(summary.averageEmploymentRate) }}</el-tag>
           <el-tag effect="plain" type="warning">平均培养完成率：{{ formatRate(summary.averageTrainingRate) }}</el-tag>
           <el-tag effect="plain" type="danger">平均学位进度：{{ formatRate(summary.averageDegreeRate) }}</el-tag>
         </div>
@@ -230,7 +235,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="就业率" min-width="140">
+          <el-table-column label="已落实去向占比" min-width="140">
             <template #default="scope">
               <div class="table-metric">
                 <span class="table-value">{{ formatRate(scope.row.employmentRate) }}</span>
@@ -262,18 +267,22 @@
         </el-table>
       </div>
     </template>
+        </el-collapse-item>
+      </el-collapse>
+    </template>
   </div>
 </template>
 
 <script>
 import ChartCard from '../components/ChartCard.vue'
 import DashboardCard from '../components/DashboardCard.vue'
-import { getCrossModuleQueryData } from '../services/mockDataService'
+import CohortPortrait from '../components/portrait/CohortPortrait.vue'
+import { getCrossModuleQueryData } from '../services/dataService'
 import { hasQueryFilters, normalizeQueryFilters } from '../utils/queryData'
 
 const OVERVIEW_SERIES = {
   awardRate: { label: '获奖率', color: '#2563EB', type: 'bar' },
-  employmentRate: { label: '就业率', color: '#0F766E', type: 'bar' },
+  employmentRate: { label: '已落实去向占比', color: '#0F766E', type: 'bar' },
   trainingCompletionRate: { label: '培养完成率', color: '#F59E0B', type: 'line' },
   degreeProgressRate: { label: '学位进度', color: '#7C3AED', type: 'line' },
 }
@@ -302,15 +311,19 @@ function createEmptyPageData(filters = { grade: '', major: '' }) {
 
 export default {
   name: 'QueryResults',
-  components: { DashboardCard, ChartCard },
+  components: { DashboardCard, ChartCard, CohortPortrait },
   data() {
     return {
       loading: false,
+      loadError: '',
       pageData: createEmptyPageData(),
       requestToken: 0,
     }
   },
   computed: {
+    portraitRows() {
+      return this.singleProfileMode ? (this.focusRow ? [this.focusRow] : []) : this.comparisonRows
+    },
     filters() {
       return normalizeQueryFilters(this.$route.query)
     },
@@ -370,7 +383,7 @@ export default {
           changeLabel: `${this.focusRow.awardCount} 人有奖助记录`,
         },
         {
-          title: '就业率',
+          title: '已落实去向占比',
           number: this.formatRate(this.focusRow.employmentRate),
           icon: 'briefcase',
           changeLabel: `${this.focusRow.employedCount} 人已有去向`,
@@ -404,7 +417,7 @@ export default {
           changeLabel: `最高 ${this.formatRate(this.topAwardRow?.awardRate || 0)}`,
         },
         {
-          title: '平均就业率',
+          title: '平均已落实去向占比',
           number: this.formatRate(this.summary.averageEmploymentRate),
           icon: 'briefcase',
           changeLabel: `最高 ${this.formatRate(this.topEmploymentRow?.employmentRate || 0)}`,
@@ -484,7 +497,7 @@ export default {
       const messages = [
         `${this.focusRow.grade}${this.focusRow.major}当前共纳入 ${this.focusRow.totalStudents} 人，男生 ${this.focusRow.maleCount} 人、女生 ${this.focusRow.femaleCount} 人，男女比例为 ${this.focusRow.genderRatioText}。`,
         `奖助覆盖率为 ${this.formatRate(this.focusRow.awardRate)}，${topScholarship ? `覆盖人数最多的是“${topScholarship.item}”，对应 ${topScholarship.value}。` : '当前未发现可用的奖助细分记录。'}`,
-        `就业落实率为 ${this.formatRate(this.focusRow.employmentRate)}，${topEmployment ? `去向分布中人数最多的是“${topEmployment.item}”，对应 ${topEmployment.value}。` : '当前未发现可用的就业去向记录。'}`,
+        `已落实去向占当前范围 ${this.formatRate(this.focusRow.employmentRate)}，${topEmployment ? `去向分布中人数最多的是“${topEmployment.item}”，对应 ${topEmployment.value}。` : '当前未发现可用的就业去向记录。'}`,
         `培养完成率 ${this.formatRate(this.focusRow.trainingCompletionRate)}、学位进度 ${this.formatRate(this.focusRow.degreeProgressRate)}，${topTrainingStage ? `当前培养记录主要集中在“${topTrainingStage.item}”。` : ''}${topDegreeItem ? `学位模块中“${topDegreeItem.item}”记录最多。` : ''}综合判断为“${this.focusRow.diagnosisLabel}”。`,
       ]
 
@@ -494,12 +507,12 @@ export default {
       const messages = []
 
       messages.push(
-        `${this.scopeTitle}本次共覆盖 ${this.comparisonRows.length} 个${this.comparisonColumnLabel}、${this.summary.totalStudents} 名学生，平均获奖率 ${this.formatRate(this.summary.averageAwardRate)}，平均就业率 ${this.formatRate(this.summary.averageEmploymentRate)}。`,
+        `${this.scopeTitle}本次共覆盖 ${this.comparisonRows.length} 个${this.comparisonColumnLabel}、${this.summary.totalStudents} 名学生，平均获奖率 ${this.formatRate(this.summary.averageAwardRate)}，平均已落实去向占比 ${this.formatRate(this.summary.averageEmploymentRate)}。`,
       )
 
       if (this.topEmploymentRow && this.bottomEmploymentRow) {
         messages.push(
-          `就业表现最好的是 ${this.getComparisonLabel(this.topEmploymentRow)}，就业率 ${this.formatRate(this.topEmploymentRow.employmentRate)}；最低的是 ${this.getComparisonLabel(this.bottomEmploymentRow)}，就业率 ${this.formatRate(this.bottomEmploymentRow.employmentRate)}，相差 ${this.formatPointDiff(this.topEmploymentRow.employmentRate - this.bottomEmploymentRow.employmentRate)}。`,
+          `已落实去向占比最高的是 ${this.getComparisonLabel(this.topEmploymentRow)}，已落实去向占比 ${this.formatRate(this.topEmploymentRow.employmentRate)}；最低的是 ${this.getComparisonLabel(this.bottomEmploymentRow)}，已落实去向占比 ${this.formatRate(this.bottomEmploymentRow.employmentRate)}，相差 ${this.formatPointDiff(this.topEmploymentRow.employmentRate - this.bottomEmploymentRow.employmentRate)}。`,
         )
       }
 
@@ -567,7 +580,7 @@ export default {
         },
         yAxis: {
           type: 'category',
-          data: ['获奖率', '就业率', '培养完成率', '学位进度', '升学深造率'],
+          data: ['获奖率', '已落实去向占比', '培养完成率', '学位进度', '升学深造率'],
           axisLabel: { color: '#667085' },
           axisLine: { lineStyle: { color: '#E4E7EC' } },
           axisTick: { show: false },
@@ -744,7 +757,7 @@ export default {
             const [employmentRate, awardRate, totalStudents, trainingRate, degreeRate] = item.value
             return [
               item.name,
-              `就业率：${employmentRate}%`,
+              `已落实去向占比：${employmentRate}%`,
               `获奖率：${awardRate}%`,
               `培养完成率：${trainingRate}%`,
               `学位进度：${degreeRate}%`,
@@ -757,7 +770,7 @@ export default {
           type: 'value',
           min: 0,
           max: 100,
-          name: '就业率',
+          name: '已落实去向占比',
           nameTextStyle: { color: '#667085' },
           axisLabel: { color: '#667085', formatter: '{value}%' },
           splitLine: { lineStyle: { color: '#E4E7EC', type: 'dashed' } },
@@ -805,7 +818,7 @@ export default {
       }
     },
     heatmapChartOptions() {
-      const metrics = ['获奖率', '就业率', '培养完成率', '学位进度', '男生占比']
+      const metrics = ['获奖率', '已落实去向占比', '培养完成率', '学位进度', '男生占比']
       const values = this.tableRows.flatMap((row, rowIndex) => ([
         [0, rowIndex, row.awardRate],
         [1, rowIndex, row.employmentRate],
@@ -868,8 +881,10 @@ export default {
     async fetchPageData() {
       const filters = normalizeQueryFilters(this.$route.query)
       const token = ++this.requestToken
+      this.loadError = ''
 
       if (!hasQueryFilters(filters)) {
+        this.loading = false
         this.pageData = createEmptyPageData(filters)
         return
       }
@@ -882,6 +897,8 @@ export default {
           ...createEmptyPageData(filters),
           ...response,
         }
+      } catch (error) {
+        if (token === this.requestToken) { this.pageData = createEmptyPageData(filters); this.loadError = error.message }
       } finally {
         if (token === this.requestToken) {
           this.loading = false
@@ -944,6 +961,8 @@ export default {
 </script>
 
 <style scoped>
+.portrait-legacy { background: #fff; border: 1px solid #e7edf5; border-radius: 12px; padding: 0 18px; margin-bottom: 20px; }
+.portrait-legacy :deep(.el-collapse-item__header) { color: #526786; font-weight: 500; }
 .query-results-page {
   color: #333;
 }

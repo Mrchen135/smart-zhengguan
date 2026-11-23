@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="loading" :error="loadError" @retry="fetchSearchResult">
   <div class="search-results-page">
     <div class="page-header">
       <div class="header-left">
@@ -191,14 +192,15 @@
       </div>
     </template>
   </div>
+</PageDataState>
 </template>
 
 <script>
 import {
   DEFAULT_SEARCH_KEYWORDS,
-  getSearchHistory,
 } from '../utils/searchEngine'
-import { getGlobalSearchResults } from '../services/mockDataService'
+import { getGlobalSearchResults } from '../services/dataService'
+import { getSearchHistory } from '../services/accountService'
 
 const SECTION_LIMITS = {
   modules: 8,
@@ -212,6 +214,9 @@ export default {
   data() {
     return {
       searchHistory: [],
+      loading: false,
+      loadError: '',
+      requestId: 0,
       searchResult: {
         keyword: '',
         total: 0,
@@ -257,7 +262,10 @@ export default {
   },
   methods: {
     async fetchSearchResult() {
+      const id = ++this.requestId
+      this.loadError = ''
       if (!this.keyword) {
+        this.loading = false
         this.searchResult = {
           keyword: '',
           total: 0,
@@ -270,10 +278,13 @@ export default {
         return
       }
 
-      this.searchResult = await getGlobalSearchResults(this.keyword)
+      this.loading = true
+      try { const result = await getGlobalSearchResults(this.keyword); if (id === this.requestId) this.searchResult = result }
+      catch (error) { if (id === this.requestId) this.loadError = error.message }
+      finally { if (id === this.requestId) this.loading = false }
     },
-    refreshSearchHistory() {
-      this.searchHistory = getSearchHistory()
+    async refreshSearchHistory() {
+      try { this.searchHistory = await getSearchHistory() } catch { this.searchHistory = [] }
     },
     clearSearch() {
       this.$router.push({ path: '/search' })

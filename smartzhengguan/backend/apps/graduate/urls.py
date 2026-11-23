@@ -1,9 +1,18 @@
 from django.urls import path
 
 from apps.graduate import views
+from apps.graduate.privacy_views import PrivacyCatalogView, PrivacyInspectView, PrivacyExecuteView
 
+
+from .collaboration_views import CollaborationTaskList, CollaborationTaskDetail, CollaborationTaskExecute
 
 urlpatterns = [
+    path('privacy-collaboration/tasks/', CollaborationTaskList.as_view(), name='collaboration-tasks'),
+    path('privacy-collaboration/tasks/<int:pk>/', CollaborationTaskDetail.as_view(), name='collaboration-task'),
+    path('privacy-collaboration/tasks/<int:pk>/execute/', CollaborationTaskExecute.as_view(), name='collaboration-task-execute'),
+    path("privacy-collaboration/scenarios/", PrivacyCatalogView.as_view(), name="privacy-catalog"),
+    path("privacy-collaboration/inspect/", PrivacyInspectView.as_view(), name="privacy-inspect"),
+    path("privacy-collaboration/execute/", PrivacyExecuteView.as_view(), name="privacy-execute"),
     path("shared-options/", views.SharedOptionsView.as_view(), name="shared-options"),
     path("home/", views.HomeDataView.as_view(), name="home-data"),
     path("admission/", views.AdmissionDataView.as_view(), name="admission-data"),

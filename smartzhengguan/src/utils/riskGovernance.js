@@ -1,5 +1,6 @@
 export function hasStudentName(student) {
   const name = String(student.name || '').trim()
+  if (student.recordKind === 'demonstration') return Boolean(name && student.studentId)
   return Boolean(name && !/^(?:学生\s*\d+|AUTO\d+|\d+)$/i.test(name)
     && name !== String(student.studentId || '').trim())
 }

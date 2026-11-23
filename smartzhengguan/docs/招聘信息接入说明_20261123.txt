@@ -1,0 +1,39 @@
+招聘信息接入结果（2026-11-23）
+
+运行项目：D:/Desktop/smartzhengguan
+页面：http://localhost:3000/#/employment-opportunities
+本次扩展前：46 条，2 个自动来源。
+扩展后：224 条，6 个自动来源；其中企业招聘 192 条，央国企筛选 31 条，互联网科技筛选 101 条。
+本次新增 178 条：网易官网职位 79 条；南开就业网名企公告 22 条、央国企公告 22 条；国聘公开公告索引 55 条。
+
+自动来源：
+1. 山大各省选调公考（26 条）
+2. 山大招聘与人才引进（20 条）
+3. 国聘行动公开招聘公告（55 条索引）：https://gpxd.iguopin.com/
+4. 网易当前校招批次职位（79 条）：https://campus.163.com/
+5. 南开名企公开招聘（22 条）：https://career.nankai.edu.cn/correcruit/index.html
+6. 南开央国企公开招聘（22 条）：https://career.nankai.edu.cn/correcruit/index.html
+
+现在可以看到的示例：国家电网、中国石油、中国移动、中国联通、中国电信、中国建筑；网易、阿里、字节跳动、美团、百度、小米、小红书、华为、腾讯音乐、京东等。腾讯音乐作为独立招聘主体标注，不等同于接通腾讯全部岗位。
+
+使用：进入就业管理 > 就业信息中心 > 企业岗位，选择央国企或互联网科技；可叠加关键词、地区、专业、单位性质、来源、状态。详情保留原文链接，原公告明确提供投递地址时显示公告投递入口。
+
+数据口径：
+“官网职位”为具体职位；“招聘公告”可能包含多个岗位；“公告索引”只有标题、日期和原文入口，不作为完整职位条件。部分高校公告以图片展示条件，须打开原文查看。
+没有公布的报名时间不虚构；本次采集包含公开校招、实习及社招资料，不保证均仍开放。企业性质仅按公开声明或公开企业名录判定；未确认的不强行改为央国企。
+互联网企业官网存在登录/限制时，采用公开高校公告补充；未宣称接入所有企业或商业招聘平台全量岗位。
+
+更新：后台每 12 小时同步一次，也可点击页面“同步信息”。依赖电脑和后台服务持续运行；关闭电脑期间不会采集。本次已重启失去心跳的旧调度进程。
+
+开发部署：backend/.venv/Scripts/python.exe manage.py migrate
+backend/.venv/Scripts/python.exe manage.py seed_employment_sources --update-existing
+backend/.venv/Scripts/python.exe manage.py sync_employment_sources --once
+上述命令在项目 backend 目录执行时，Python 路径改为 .venv/Scripts/python.exe。
+持续运行：.venv/Scripts/python.exe manage.py sync_employment_sources --watch --interval 43200
+
+采集保留域名白名单、公开地址校验、TLS 校验、robots 规则、每域至少 2 秒间隔、单来源请求上限；不读取登录数据、不提交应聘、不上传学生信息。重复链接更新原记录，教师核对或更正过的字段不会直接覆盖。
+
+验证：就业模块后端 46 项测试、前端 41 项测试通过；Vite 构建通过（已有大包体提示）；浏览器筛选、重置、具体职位详情、来源筛选和自动同步状态已验证。
+数据库完整性、外键检查、URL 唯一性、招聘单位与代发单位区分均通过。JSON 统计见同目录 employment-expansion-20261123.json。
+
+修改前备份：D:/Desktop/smartzhengguan/.local-backups/employment-expansion-1795447198424

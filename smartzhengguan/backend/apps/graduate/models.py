@@ -26,6 +26,7 @@ class EnrollmentType(models.TextChoices):
 
 class StudentStatus(models.TextChoices):
     ACTIVE = "active", "Active"
+    GRADUATED = "graduated", "Graduated"
     SUSPENDED = "suspended", "Suspended"
     WITHDRAWN = "withdrawn", "Withdrawn"
     EXTENDED = "extended", "Extended Graduation"
@@ -65,7 +66,12 @@ class ModuleCode(models.TextChoices):
 class Student(TimestampedModel):
     student_id = models.CharField(max_length=32, unique=True)
     name = models.CharField(max_length=100)
-    gender = models.CharField(max_length=20, blank=True)
+    gender = models.CharField(max_length=20, choices=[("男", "男"), ("女", "女")])
+    gender_source = models.CharField(max_length=40, blank=True)
+    profile_source = models.CharField(max_length=40, blank=True)
+    enrolled_on = models.DateField(null=True, blank=True)
+    graduated_on = models.DateField(null=True, blank=True)
+    required_credits = models.PositiveSmallIntegerField(default=0)
     college = models.CharField(max_length=150, blank=True)
     major = models.CharField(max_length=150)
     grade = models.CharField(max_length=20)
@@ -188,6 +194,7 @@ class AdmissionStageProgress(TimestampedModel):
 
 
 class AcademicStatusEvent(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     external_id = models.CharField(max_length=32, unique=True)
     student = models.ForeignKey(
         Student,
@@ -212,6 +219,7 @@ class AcademicStatusEvent(TimestampedModel):
 
 
 class AcademicChangeRequest(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     student = models.ForeignKey(
         Student,
         related_name="academic_change_requests",
@@ -236,6 +244,7 @@ class AcademicChangeRequest(TimestampedModel):
 
 
 class TrainingPlan(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     student = models.ForeignKey(
         Student,
         related_name="training_plans",
@@ -278,6 +287,7 @@ class CourseOffering(TimestampedModel):
 
 
 class DegreeApplication(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     student = models.ForeignKey(
         Student,
         related_name="degree_applications",
@@ -319,6 +329,7 @@ class DefenseSession(TimestampedModel):
 
 
 class ScholarshipAward(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     student = models.ForeignKey(
         Student,
         related_name="scholarship_awards",
@@ -354,6 +365,7 @@ class EmploymentRecord(TimestampedModel):
     student_name = models.CharField(max_length=100, blank=True)
     graduation_year = models.PositiveIntegerField()
     destination_type = models.CharField(max_length=100)
+    data_source = models.CharField(max_length=40, blank=True)
     unit_nature = models.CharField(max_length=100, blank=True)
     industry = models.CharField(max_length=100, blank=True)
     province = models.CharField(max_length=100, blank=True)
@@ -382,6 +394,7 @@ class PredictionIndicatorDefinition(TimestampedModel):
 
 
 class PredictionSnapshot(TimestampedModel):
+    data_source = models.CharField(max_length=40, blank=True)
     student = models.ForeignKey(
         Student,
         related_name="prediction_snapshots",
@@ -768,3 +781,20 @@ class WarningTreatmentLog(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.warning.id} - {self.action}"
+
+
+class DataRepairArchive(models.Model):
+    """Original records retained for reversible data reconciliation; not business rows."""
+    batch_id = models.CharField(max_length=64, db_index=True)
+    model_label = models.CharField(max_length=100)
+    original_pk = models.PositiveBigIntegerField()
+    action = models.CharField(max_length=16, choices=[('archive','归档'),('update','更新前留档'),('create','新建记录')])
+    reason = models.CharField(max_length=255)
+    canonical_pk = models.PositiveBigIntegerField(null=True, blank=True)
+    original = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['batch_id','model_label','original_pk'], name='unique_repair_archive_record')]
+        ordering = ['-created_at','-pk']

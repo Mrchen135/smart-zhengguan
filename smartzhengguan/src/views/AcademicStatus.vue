@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="academic-page">
     <el-row :gutter="14" class="stat-row">
       <el-col :span="4" v-for="card in statCards" :key="card.title">
@@ -92,22 +93,28 @@
           <el-select v-model="editForm.status" style="width: 100%">
             <el-option label="办理中" value="办理中" />
             <el-option label="已通过" value="已通过" />
-            <el-option label="待补材料" value="待补材料" />
+            <el-option label="待审核" value="待审核" />
+            <el-option label="已退回" value="已退回" />
+            <el-option label="待提交" value="待提交" />
+            <el-option label="处理中" value="处理中" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveRecordEdit">保存</el-button>
+        <el-button type="primary" :loading="recordSaving" @click="saveRecordEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
+import { saveAcademicRecord } from '../services/accountService'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
-import { getAcademicStatusData } from '../services/mockDataService'
+import { getAcademicStatusData } from '../services/dataService'
 
 const CARD_META = [
   { icon: 'user', iconBg: '#EEF4FF', unit: '人' },
@@ -131,12 +138,13 @@ const EMPTY_PAGE_DATA = {
   records: [],
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard },
   data() {
     return {
       pageData: EMPTY_PAGE_DATA,
       recordPage: 1,
+      recordSaving: false,
       viewDialogVisible: false,
       editDialogVisible: false,
       activeRecord: null,
@@ -243,25 +251,19 @@ export default {
       this.editForm = { ...row }
       this.editDialogVisible = true
     },
-    saveRecordEdit() {
-      const index = this.pageData.records.findIndex((item) => item.id === this.editForm.id)
-      if (index === -1) return
-
-      const statusTypeMap = {
-        办理中: 'warning',
-        已通过: 'success',
-        待补材料: 'danger',
-      }
-
-      this.pageData.records.splice(index, 1, {
-        ...this.editForm,
-        tagType: statusTypeMap[this.editForm.status] || 'info',
-      })
-      this.editDialogVisible = false
-      this.$message?.success('异动记录已更新')
+    async saveRecordEdit() {
+      if (this.recordSaving) return
+      this.recordSaving = true
+      try {
+        await saveAcademicRecord(this.editForm)
+        await this.loadPageData()
+        this.editDialogVisible = false
+        this.$message.success('异动记录已保存到数据库')
+      } catch (error) { this.$message.error(error.message) }
+      finally { this.recordSaving = false }
     },
   },
-}
+})
 </script>
 
 <style scoped>

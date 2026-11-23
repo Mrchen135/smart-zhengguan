@@ -1,9 +1,9 @@
 /**
  * R06: 导出服务
  */
-import axios from 'axios'
+import axios from './httpClient'
 
-const API_BASE_URL = 'http://localhost:8000/api/v1'
+import { API_BASE_URL } from './apiClient'
 
 const exportService = {
   /**
@@ -48,8 +48,15 @@ const exportService = {
   /**
    * 下载导出文件
    */
-  getDownloadUrl(recordId) {
-    return `${API_BASE_URL}/export/download/${recordId}/`
+  async downloadFile(recordId) {
+    const response = await axios.get(`${API_BASE_URL}/export/download/${recordId}/`, { responseType: 'blob' })
+    const disposition = response.headers['content-disposition'] || ''
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const filename = encoded ? decodeURIComponent(encoded) : disposition.match(/filename="?([^";]+)/i)?.[1] || 'export.xlsx'
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url; link.download = filename; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   },
 
   /**

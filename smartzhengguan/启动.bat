@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal EnableExtensions
 cd /d "%~dp0"
 
@@ -36,6 +37,14 @@ if not exist "backend\.venv\Scripts\python.exe" (
 if not exist "backend\db.sqlite3" (
     echo [WARN] backend\db.sqlite3 not found. Run migrations first.
 )
+
+echo [INFO] Applying database migrations...
+"backend\.venv\Scripts\python.exe" backend\manage.py migrate --noinput
+if errorlevel 1 goto :fail
+"backend\.venv\Scripts\python.exe" backend\manage.py seed_employment_sources
+if errorlevel 1 goto :fail
+call "启动就业信息自动同步.bat"
+if errorlevel 1 goto :fail
 
 call :kill_port 8000
 call :kill_port 3000

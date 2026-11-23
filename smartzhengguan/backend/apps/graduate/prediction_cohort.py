@@ -23,7 +23,8 @@ def build_cohort_chat(question, history=None):
                  if not getattr(item, 'is_virtual', False)
                  and item.student.name.strip()
                  and item.student.name.strip() != item.student.student_id
-                 and not re.fullmatch(r'学生\d+', item.student.name.strip())]
+                 and (item.student.profile_source.startswith('demo_') or not re.fullmatch(r'学生\d+', item.student.name.strip()))
+                 and item.student.current_status != 'graduated']
     scope = []
     if re.search(r'^(那|只看|换成|改为|其中|再看)', question) and not re.search(r'全部|全院|所有|全体', question):
         previous = next((item.get('content') or item.get('text', '')
@@ -83,7 +84,7 @@ def build_cohort_chat(question, history=None):
              'overdue': '任务逾期次数降序，其次按风险分降序',
              'communication': '近60天导师沟通次数升序，其次按风险分降序',
              'training': '培养计划完成率升序，其次按风险分降序'}
-    lines = [f'统计范围：本学院，{scope_label}；共 {len(snapshots)} 名有实测快照的学生。',
+    lines = [f'统计范围：本学院，{scope_label}；共 {len(snapshots)} 名有画像快照的在读学生。',
              f'排序口径：{rules[metric]}。未使用左侧选中学生作为群体答案。']
     if selected:
         lines.append(f'建议优先核实以下 {len(selected)} 位同学（符合当前风险条件共 {len(rows)} 人）：')
@@ -99,7 +100,7 @@ def build_cohort_chat(question, history=None):
         'scope': {'type': 'cohort', 'label': scope_label, 'studentCount': len(snapshots)},
         'students': selected,
         'answer': {'directAnswer': '\n\n'.join(lines),
-                   'reasoning': ['仅统计每位学生最新的实测快照，排除无快照的推算样本。',
+                   'reasoning': ['仅统计每位学生最新的已保存快照，排除已毕业学生和无快照的推算样本；演示数据保留来源标记。',
                                  '这是基于现有指标的筛查顺序，需核实记录与培养阶段后决定干预措施。'],
                    'actionPlan': ['逐一核实异常指标，与导师和学生确认原因，再约定跟进动作与复核时间。'],
                    'citations': []},

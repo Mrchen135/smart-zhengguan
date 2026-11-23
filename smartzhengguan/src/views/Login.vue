@@ -22,6 +22,7 @@
           </div>
 
           <div class="login-card-body">
+            <el-alert v-if="loginError" :title="loginError" type="error" :closable="false" show-icon style="margin-bottom:16px" />
             <el-form :model="form" class="login-form" @submit.prevent>
               <el-form-item>
                 <el-input
@@ -42,7 +43,7 @@
               </el-form-item>
 
               <div class="login-options">
-                <el-checkbox v-model="rememberMe">自动登录</el-checkbox>
+                <el-checkbox v-model="rememberMe">记住账号</el-checkbox>
                 <button type="button" class="link-btn" @click="showForgotPassword">
                   忘记密码？
                 </button>
@@ -52,6 +53,7 @@
                 type="primary"
                 size="large"
                 class="login-btn"
+                :loading="submitting"
                 @click="submitLogin"
               >
                 账号登录
@@ -62,8 +64,8 @@
               <div class="tip-title">温馨提示：</div>
               <div class="tip-line">1. 用户名为“工号 / 学号”，若忘记密码请先重置密码。</div>
               <div class="tip-line">2. 浏览器建议使用极速模式。</div>
-              <div class="tip-line">3. 演示默认密码为 `123456`。</div>
-              <div class="tip-line tip-danger">4. 本平台为校内业务演示页面，请勿输入真实敏感账号密码。</div>
+              <div class="tip-line">3. 请使用后端数据库中已创建的账号。</div>
+              <div class="tip-line tip-danger">4. 首次使用可由管理员运行 createsuperuser 初始化账号。</div>
             </div>
           </div>
         </section>
@@ -78,9 +80,13 @@
 </template>
 
 <script>
+import { login } from '../services/accountService'
+import { getSystemSettingsData } from '../services/dataService'
 export default {
   data() {
     return {
+      submitting: false,
+      loginError: '',
       form: {
         username: localStorage.getItem('remember-username') || 'admin',
         password: '',
@@ -99,36 +105,23 @@ export default {
       this.$message?.info('当前演示版本暂未提供英文界面')
     },
     showForgotPassword() {
-      this.$message?.info('演示环境请使用默认密码 123456，正式环境可接入统一身份密码找回流程')
+      this.$message?.info('请联系系统管理员，通过后端 changepassword 命令重置账号密码')
     },
-    submitLogin() {
-      const storedPassword = localStorage.getItem('mock-password') || '123456'
-
-      if (!this.form.username || !this.form.password) {
-        this.$message.warning('请输入账号和密码')
-        return
-      }
-
-      if (this.form.password !== storedPassword) {
-        this.$message.error('账号或密码不正确')
-        return
-      }
-
-      if (this.rememberMe) {
-        localStorage.setItem('remember-username', this.form.username)
-      } else {
-        localStorage.removeItem('remember-username')
-      }
-
-      localStorage.setItem('token', `mock-token-${Date.now()}`)
-      localStorage.setItem('mock-user', JSON.stringify({
-        name: this.form.username === 'admin' ? '张老师' : this.form.username,
-        role: this.form.role,
-      }))
-      window.dispatchEvent(new Event('mock-user-updated'))
-
-      const redirect = this.$route.query.redirect || '/home'
-      this.$router.push(redirect)
+    async submitLogin() {
+      if (this.submitting) return
+      if (!this.form.username || !this.form.password) { this.$message.warning('请输入账号和密码'); return }
+      this.submitting = true
+      this.loginError = ''
+      try {
+        await login(this.form.username.trim(), this.form.password)
+        if (this.rememberMe) localStorage.setItem('remember-username', this.form.username)
+        else localStorage.removeItem('remember-username')
+        const settings = await getSystemSettingsData()
+        const requested = String(this.$route.query.redirect || '')
+        const redirect = requested.startsWith('/') && !requested.startsWith('//') && !requested.startsWith('/login') ? requested : settings.values.default_page
+        await this.$router.push(redirect || '/home')
+      } catch (error) { this.loginError = error.message }
+      finally { this.submitting = false }
     },
   },
 }

@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="degree-page">
     <div class="page-header">
       <span class="page-title">学院学位管理数据概览</span>
@@ -43,12 +44,14 @@
       <el-col :span="8"><ChartCard title="学院近五年学位授予数量趋势" :chartOptions="awardTrendChart" chartHeight="340px" /></el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
-import { getDegreeData } from '../services/mockDataService'
+import { getDegreeData } from '../services/dataService'
 
 const CARD_META = [
   { icon: 'clipboard', iconBg: '#EEF4FF', unit: '人' },
@@ -71,7 +74,7 @@ const EMPTY_PAGE_DATA = {
   todos: [],
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard },
   data() {
     return {
@@ -316,7 +319,7 @@ export default {
       return `${value.toLocaleString('zh-CN')}${unit}`
     },
   },
-}
+})
 </script>
 
 <style scoped>

@@ -1,9 +1,9 @@
 /**
  * R07: 预警规则引擎服务
  */
-import axios from 'axios'
+import axios from './httpClient'
 
-const API_BASE_URL = 'http://localhost:8000/api/v1'
+import { API_BASE_URL } from './apiClient'
 
 const warningService = {
   /**

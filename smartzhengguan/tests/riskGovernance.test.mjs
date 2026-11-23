@@ -52,3 +52,5 @@ test('missing values are excluded and an empty scope has no fabricated data', ()
     assert.deepEqual(gauge.students, [])
   }
 })
+
+test('source-marked demo profiles are selectable without inventing names',()=>{assert.equal(isImportedPredictionStudent({name:'学生0139',studentId:'AUTO0139',dataSource:'measured',recordKind:'demonstration'}),true)})

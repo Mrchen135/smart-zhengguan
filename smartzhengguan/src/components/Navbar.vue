@@ -30,6 +30,7 @@
 
         <div v-if="searchPanelVisible" class="search-panel">
           <template v-if="searchKeyword">
+            <el-alert v-if="searchError" :title="searchError" type="error" :closable="false"><el-button link @click="fetchSearchPreview">重试搜索</el-button></el-alert>
             <div class="search-panel-header">
               <span>找到 {{ searchResultCount }} 条相关结果</span>
               <el-button link type="primary" @click="submitSearch">查看全部</el-button>
@@ -55,7 +56,7 @@
               </button>
             </div>
 
-            <div v-else class="search-panel-empty">
+            <div v-else-if="!searchError" class="search-panel-empty">
               未找到直接结果，按回车进入全局搜索页查看更多结果。
             </div>
           </template>
@@ -124,6 +125,8 @@
             <el-button link type="primary" size="small" @click="markAllRead">全部已读</el-button>
           </div>
           <div class="msg-list">
+            <el-alert v-if="notificationError" :title="notificationError" type="error" :closable="false" /><el-button v-if="notificationError" link @click="loadMessages">重试</el-button>
+            <el-empty v-else-if="!messages.length" description="暂无消息" :image-size="60" />
             <div
               v-for="msg in messages"
               :key="msg.id"
@@ -221,46 +224,11 @@
 </template>
 
 <script>
-import {
-  DEFAULT_SEARCH_KEYWORDS,
-  clearSearchHistory,
-  getSearchHistory,
-  saveSearchHistory,
-} from '../utils/searchEngine'
-import { getGlobalSearchResults } from '../services/mockDataService'
-
-const MESSAGE_STORAGE_KEY = 'mock-navbar-messages'
-
-const DEFAULT_MESSAGES = [
-  {
-    id: 1,
-    title: '2024年研究生学籍信息核对通知',
-    time: '2024-05-18 09:30',
-    read: false,
-    content: '请于本周内完成研究生学籍信息核对，并核验异常记录。',
-  },
-  {
-    id: 2,
-    title: '学位申请阶段工作安排提醒',
-    time: '2024-05-15 14:20',
-    read: false,
-    content: '学位申请进入材料复核阶段，请尽快确认论文和答辩安排。',
-  },
-  {
-    id: 3,
-    title: '研究生学术论坛报名通知',
-    time: '2024-05-10 10:00',
-    read: true,
-    content: '本学期研究生学术论坛报名通道已开放，请通知相关学生按时参加。',
-  },
-  {
-    id: 4,
-    title: '毕业答辩材料提交截止提醒',
-    time: '2024-05-08 16:00',
-    read: true,
-    content: '本周毕业答辩材料提交截止，请督促学生按要求完成上传。',
-  },
-]
+import { DEFAULT_SEARCH_KEYWORDS } from '../utils/searchEngine'
+import { clearSearchHistory, getSearchHistory, saveSearchHistory } from '../services/accountService'
+import { getGlobalSearchResults } from '../services/dataService'
+import { getCurrentUser, getNotifications, markNotificationsRead } from '../services/accountService'
+import { clearSession } from '../services/apiClient'
 
 export default {
   data() {
@@ -273,7 +241,9 @@ export default {
       searchPreview: null,
       searchPreviewTimer: null,
       searchHistory: [],
-      user: { name: '张老师', role: '教务秘书', avatar: '' },
+      user: { name: '', role: '', avatar: '' },
+      notificationError: '',
+      searchError: '',
       messages: [],
       activeMessage: null,
     }
@@ -309,11 +279,13 @@ export default {
     this.loadUser()
     this.loadMessages()
     this.refreshSearchHistory()
-    window.addEventListener('mock-user-updated', this.loadUser)
+    window.addEventListener('account-updated', this.loadUser)
+    window.addEventListener('notifications-updated', this.loadMessages)
     document.addEventListener('click', this.handleDocumentClick)
   },
   beforeUnmount() {
-    window.removeEventListener('mock-user-updated', this.loadUser)
+    window.removeEventListener('account-updated', this.loadUser)
+    window.removeEventListener('notifications-updated', this.loadMessages)
     document.removeEventListener('click', this.handleDocumentClick)
     if (this.searchPreviewTimer) {
       clearTimeout(this.searchPreviewTimer)
@@ -328,6 +300,7 @@ export default {
       }
 
       const keyword = String(this.searchKeyword || '').trim()
+      this.searchError = ''
       if (!keyword) {
         this.searchPreview = null
         return
@@ -344,9 +317,12 @@ export default {
         return
       }
 
-      const result = await getGlobalSearchResults(keyword)
-      if (keyword !== String(this.searchKeyword || '').trim()) return
-      this.searchPreview = result
+      this.searchError = ''
+      try {
+        const result = await getGlobalSearchResults(keyword)
+        if (keyword !== String(this.searchKeyword || '').trim()) return
+        this.searchPreview = result
+      } catch (error) { if (keyword === String(this.searchKeyword || '').trim()) { this.searchPreview = null; this.searchError = error.message } }
     },
     focusSearch() {
       this.openSearchPanel()
@@ -364,8 +340,9 @@ export default {
         this.closeSearchPanel()
       }
     },
-    refreshSearchHistory() {
-      this.searchHistory = getSearchHistory()
+    async refreshSearchHistory() {
+      try { this.searchHistory = await getSearchHistory() }
+      catch { this.searchHistory = [] }
     },
     applyKeyword(keyword) {
       this.searchKeyword = keyword
@@ -374,7 +351,7 @@ export default {
         this.$refs.searchInput?.focus()
       })
     },
-    submitSearch() {
+    async submitSearch() {
       const keyword = String(this.searchKeyword || '').trim()
 
       if (!keyword) {
@@ -382,19 +359,17 @@ export default {
         return
       }
 
-      saveSearchHistory(keyword)
-      this.refreshSearchHistory()
+      try { this.searchHistory = await saveSearchHistory(keyword) } catch (error) { this.$message?.warning(error.message) }
       this.closeSearchPanel()
       this.$router.push({
         path: '/search',
         query: { q: keyword },
       })
     },
-    openSearchResult(item) {
+    async openSearchResult(item) {
       const keyword = String(this.searchKeyword || item.title || '').trim()
       if (keyword) {
-        saveSearchHistory(keyword)
-        this.refreshSearchHistory()
+        try { this.searchHistory = await saveSearchHistory(keyword) } catch (error) { this.$message?.warning(error.message) }
       }
 
       this.closeSearchPanel()
@@ -403,53 +378,29 @@ export default {
         query: item.routeQuery || {},
       })
     },
-    clearStoredSearchHistory() {
-      clearSearchHistory()
-      this.refreshSearchHistory()
+    async clearStoredSearchHistory() {
+      try { this.searchHistory = await clearSearchHistory() } catch (error) { this.$message?.error(error.message) }
     },
-    loadUser() {
-      const storedUser = localStorage.getItem('mock-user')
-      if (!storedUser) return
+    async loadUser() {
       try {
-        this.user = {
-          ...this.user,
-          ...JSON.parse(storedUser),
-        }
-      } catch (error) {
-        console.warn('用户信息读取失败', error)
-      }
+        const account = await getCurrentUser()
+        this.user = { name: (account.first_name + ' ' + account.last_name).trim() || account.username, role: { admin: '管理员', teacher: '导师/教师', student: '研究生' }[account.role] || account.role, avatar: '' }
+      } catch (error) { this.$message?.error(error.message) }
     },
-    loadMessages() {
-      const stored = localStorage.getItem(MESSAGE_STORAGE_KEY)
-      if (!stored) {
-        this.messages = DEFAULT_MESSAGES
-        this.persistMessages()
-        return
-      }
-
-      try {
-        this.messages = JSON.parse(stored)
-      } catch (error) {
-        console.warn('消息读取失败', error)
-        this.messages = DEFAULT_MESSAGES
-        this.persistMessages()
-      }
+    async loadMessages() {
+      this.notificationError = ''
+      try { this.messages = await getNotifications() }
+      catch (error) { this.messages = []; this.notificationError = error.message }
     },
-    persistMessages() {
-      localStorage.setItem(MESSAGE_STORAGE_KEY, JSON.stringify(this.messages))
-    },
-    openMessage(message) {
-      message.read = true
-      this.persistMessages()
+    async openMessage(message) {
       this.activeMessage = message
       this.messageDialogVisible = true
+      try { this.messages = await markNotificationsRead([message.id]) }
+      catch (error) { this.$message?.error(error.message) }
     },
-    markAllRead() {
-      this.messages = this.messages.map((message) => ({
-        ...message,
-        read: true,
-      }))
-      this.persistMessages()
+    async markAllRead() {
+      try { this.messages = await markNotificationsRead(this.messages.map(item => item.id)) }
+      catch (error) { this.$message?.error(error.message) }
     },
     goUserMenu(path) {
       this.userVisible = false
@@ -457,7 +408,7 @@ export default {
     },
     handleLogout() {
       this.userVisible = false
-      localStorage.removeItem('token')
+      clearSession()
       this.$router.push('/login')
     },
   },

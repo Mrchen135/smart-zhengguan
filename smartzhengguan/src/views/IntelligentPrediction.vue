@@ -83,6 +83,7 @@
         </div>
 
         <div class="filter-actions">
+          <el-button plain @click="$router.push('/privacy-collaboration')">隐私协同展示台</el-button>
           <el-button type="primary" :loading="pageLoading" @click="handleRefresh">刷新分析</el-button>
           <el-button type="success" @click="handleExport">导出报告</el-button>
         </div>
@@ -251,7 +252,7 @@
     <div class="section-heading">风险预警与治理</div>
     <div class="governance-scope">
       统计范围：{{ filters.grade || '全部年级' }} · {{ filters.major || '全部专业' }} · {{ filters.riskType || '全部' }}风险类型，
-      共 {{ governanceStudents.length }} 名导入样本（当前快照，不含自动推算样本）。
+      共 {{ governanceStudents.length }} 名在读学生档案（当前快照；演示档案有来源标记）。
     </div>
     <div class="risk-grid">
       <div class="gauge-grid">
@@ -335,7 +336,7 @@
                 </svg>
               </div>
               <div class="assistant-name">AI 助手</div>
-              <div class="assistant-desc">个人问题分析当前对象；群体问题比较全院实测学生</div>
+              <div class="assistant-desc">个人问题分析当前对象；群体问题比较全院在读档案</div>
             </div>
 
             <div ref="assistantChatRef" class="assistant-chat" @scroll="handleChatScroll">
@@ -576,7 +577,7 @@ import {
   getIntelligentPredictionChat,
   getIntelligentPredictionData,
   streamIntelligentPredictionChat,
-} from '../services/mockDataService'
+} from '../services/dataService'
 
 function uniqueValues(list, field) {
   return Array.from(new Set(list.map((item) => item[field])))
@@ -989,7 +990,7 @@ export default {
           // Imported summary rows use names such as 学生0624. These are
           // placeholders, not names suitable for individual selection.
           const name = String(student.name || '').trim()
-          return name && !/^(?:学生\s*\d+|AUTO\d+|\d+)$/i.test(name)
+          return (student.recordKind === 'demonstration' && name) || name && !/^(?:学生\s*\d+|AUTO\d+|\d+)$/i.test(name)
             && name !== String(student.studentId || '').trim()
         })
         .map((student) => ({
@@ -1248,7 +1249,7 @@ export default {
       return buildGovernanceGauges(this.governanceStudents)
     },
     governanceStudents() {
-      return this.filteredStudents.filter(isImportedPredictionStudent)
+      return this.filteredStudents.filter(student => isImportedPredictionStudent(student) && student.currentStatus !== '已毕业')
     },
     activeGovernanceGauge() {
       return this.gauges.find((gauge) => gauge.key === this.governanceDetailKey)
