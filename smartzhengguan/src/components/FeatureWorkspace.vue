@@ -161,6 +161,7 @@
 </template>
 
 <script>
+import { readNotice } from '../services/accountService'
 import DashboardCard from './DashboardCard.vue'
 import ChartCard from './ChartCard.vue'
 
@@ -366,13 +367,14 @@ export default {
         this.$router.push(action.route)
         return
       }
-      this.$message?.success(action.message || `${action.label} 已执行`)
+      this.$router.push('/data-management')
     },
     openRowDetail(row) {
       this.activeRow = row
       this.rowDetailVisible = true
     },
     openNotice(item) {
+      readNotice(item).catch(error => this.$message?.error(error.message))
       this.activeNotice = item
       this.noticeDetailVisible = true
     },

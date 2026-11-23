@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="scholarship-page">
     <div class="page-header">
       <span class="page-title">学院奖助管理数据概览</span>
@@ -54,12 +55,14 @@
       </el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
-import { getScholarshipData } from '../services/mockDataService'
+import { getScholarshipData } from '../services/dataService'
 
 const CARD_META = [
   { icon: 'medal', iconBg: '#EEF4FF' },
@@ -83,7 +86,7 @@ const EMPTY_PAGE_DATA = {
   todos: [],
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard },
   data() {
     return {
@@ -258,7 +261,7 @@ export default {
       return `${display}${unit || ''}`
     },
   },
-}
+})
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="home-page">
     <GlobalQueryBar />
 
@@ -6,24 +7,25 @@
       <el-col :span="8" class="home-col">
         <div class="hero-card">
           <div class="hero-label">{{ headline.title }}</div>
+          <div class="hero-subtitle">{{ headline.subtitle }}</div>
           <div class="hero-number">{{ formatNumber(headline.totalStudents) }}<span class="hero-unit">人</span></div>
           <div class="hero-divider"></div>
           <div class="hero-summary">
             <div class="hero-item">
               <span class="hero-dot master"></span>
-              <span class="hero-text">学院硕士研究生 <b>{{ formatNumber(headline.masterCount) }}</b> 人</span>
+              <span class="hero-text">硕士档案 <b>{{ formatNumber(headline.masterCount) }}</b> 人</span>
             </div>
             <div class="hero-item">
               <span class="hero-dot doctor"></span>
-              <span class="hero-text">学院博士研究生 <b>{{ formatNumber(headline.doctorCount) }}</b> 人</span>
+              <span class="hero-text">博士档案 <b>{{ formatNumber(headline.doctorCount) }}</b> 人</span>
             </div>
             <div class="hero-item">
               <span class="hero-dot international"></span>
-              <span class="hero-text">学院国际学生 <b>{{ formatNumber(headline.internationalCount) }}</b> 人</span>
+              <span class="hero-text">国际生档案 <b>{{ formatNumber(headline.internationalCount) }}</b> 人</span>
             </div>
             <div class="hero-item">
               <span class="hero-dot graduate"></span>
-              <span class="hero-text">学院本年毕业 <b>{{ formatNumber(headline.annualGraduates) }}</b> 人</span>
+              <span class="hero-text">本年毕业 <b>{{ formatNumber(headline.annualGraduates) }}</b> 人</span>
             </div>
           </div>
         </div>
@@ -47,7 +49,7 @@
     <el-row :gutter="16" class="home-row">
       <el-col :span="16" class="home-col">
         <ChartCard
-          title="学院近五年人数趋势"
+          title="各年级学生档案规模（含毕业生）"
           :chartOptions="trendChart"
           chartHeight="380px"
         />
@@ -57,14 +59,14 @@
         <el-row :gutter="0" class="side-charts">
           <el-col :span="24" class="side-chart-item">
             <ChartCard
-              title="性别比例"
+              title="全部档案 · 性别比例"
               :chartOptions="genderChart"
               chartHeight="180px"
             />
           </el-col>
           <el-col :span="24" class="side-chart-item side-chart-spacer">
             <ChartCard
-              title="年级分布"
+              title="全部档案 · 年级分布"
               :chartOptions="gradeChart"
               chartHeight="180px"
             />
@@ -123,7 +125,7 @@
       <el-col :span="10" class="home-col">
         <div class="region-chart-shell">
           <ChartCard
-            title="学院生源地分布"
+            title="全部档案 · 生源地分布"
             :chartOptions="regionChart"
             :key="'map-' + mapLoaded"
             chartHeight="320px"
@@ -132,14 +134,17 @@
       </el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { readNotice } from '../services/accountService'
+import { withDatabasePage } from '../utils/databasePage'
 import * as echarts from 'echarts'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
 import GlobalQueryBar from '../components/GlobalQueryBar.vue'
-import { getHomeDashboardData } from '../services/mockDataService'
+import { getHomeDashboardData } from '../services/dataService'
 
 const LOCAL_CHINA_MAP_URL = '/maps-china-100000.json'
 const REMOTE_CHINA_MAP_URL = 'https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json'
@@ -168,7 +173,7 @@ const EMPTY_HOME_DATA = {
 const REGION_BAR_COLORS = ['#BBDEFB', '#90CAF9', '#64B5F6', '#42A5F5', '#2196F3', '#1976D2', '#0D47A1']
 const NON_MAP_REGION_NAMES = new Set(['其他', '境外', '海外', '待更新', '未知'])
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard, GlobalQueryBar },
   data() {
     return {
@@ -283,7 +288,7 @@ export default {
             left: 'center',
             top: '50%',
             style: {
-              text: '学院总量',
+              text: '档案总量',
               fill: '#86909C',
               fontSize: 11,
               textAlign: 'center',
@@ -347,13 +352,15 @@ export default {
       return typeof value === 'number' ? this.formatNumber(value) : value
     },
     handleTodoClick(todo) {
-      if (this.$message) this.$message.info(`跳转至：${todo.label}`)
+      const route = todo.label.includes('培养') ? '/training' : todo.label.includes('学籍') ? '/academic-change' : todo.label.includes('答辩') ? '/degree-defense' : todo.label.includes('招生') ? '/admission' : todo.label.includes('预测') ? '/intelligent-prediction' : todo.label.includes('课程') ? '/training-course' : todo.label.includes('学位') ? '/degree' : '/scholarship'
+      this.$router.push(route)
     },
     handleNoticeClick(notice) {
+      readNotice(notice).catch(error => this.$message?.error(error.message))
       if (notice.url) {
         window.open(notice.url, '_blank')
       } else if (this.$message) {
-        this.$message.info(`查看通知：${notice.title}`)
+        this.$alert(notice.content || notice.title, notice.title, { confirmButtonText: '关闭' })
       }
     },
     async loadDashboardData() {
@@ -460,7 +467,7 @@ export default {
       }
     },
   },
-}
+})
 </script>
 
 <style scoped>
@@ -495,6 +502,13 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+.hero-subtitle {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.78);
 }
 
 .hero-label { font-size: 14px; opacity: 0.85; margin-bottom: 6px; }

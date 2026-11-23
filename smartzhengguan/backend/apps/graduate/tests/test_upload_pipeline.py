@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.graduate.models import ImportBatch, Student, ScholarshipAward
+from apps.accounts.models import User
 from apps.graduate import upload_pipeline, upload_services
 
 
@@ -25,6 +26,7 @@ class WorkbookImportTests(TestCase):
         root.mkdir(parents=True)
         shutil.copyfile(FIXTURE, root / f'{self.batch.batch_id}_{FIXTURE.name}')
         self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user(username="upload_admin", role="admin"))
 
     def post(self, endpoint, **data):
         response = self.client.post(f'/api/v1/upload/{endpoint}/', {'batch_id': self.batch.batch_id, **data}, format='json')
@@ -104,7 +106,7 @@ class WorkbookImportTests(TestCase):
         self.batch.file_name = 'many.csv'
         self.batch.save()
         path = Path(self.tmp.name) / 'tmp' / 'uploads' / f'{self.batch.batch_id}_many.csv'
-        path.write_text('学号,姓名,年级,专业\n' + '\n'.join(f'{i},姓名{i},2023级,专业' for i in range(30)), encoding='utf-8-sig')
+        path.write_text('学号,姓名,年级,专业,性别\n' + '\n'.join(f'{i},姓名{i},2023级,专业,女' for i in range(30)), encoding='utf-8-sig')
         result = self.post('validate-preview', strategy='create_only')
         self.assertEqual(result['preview']['new_count'], 30)
         self.assertEqual(len(result['preview']['sample_changes']), 20)
@@ -120,4 +122,13 @@ class WorkbookImportTests(TestCase):
         self.post('validate-preview', strategy='create_only')
         response = self.client.post('/api/v1/upload/confirm/', {'batch_id': self.batch.batch_id, 'strategy': 'overwrite'}, format='json')
         self.assertEqual(response.status_code, 400)
+        self.assertFalse(Student.objects.exists())
+
+    def test_new_student_without_gender_is_rejected_in_preview(self):
+        plan=upload_pipeline.load_plan(self.batch)
+        plan['sheets'][0]['mapping'].pop('性别')
+        upload_pipeline.save_plan(self.batch,plan)
+        result=upload_pipeline.prepare_import(self.batch,'create_only')
+        self.assertGreaterEqual(result['preview']['error_count'],10)
+        self.assertTrue(any('性别' in error['message'] for error in result['validation']['errors']))
         self.assertFalse(Student.objects.exists())

@@ -1,9 +1,10 @@
 <template>
   <div class="data-management">
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon style="margin-bottom:16px" />
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>数据管理</span>
+          <span>数据管理</span><div><el-button @click="reloadDatabaseLists">刷新数据</el-button><el-button type="primary" @click="exportDialogVisible = true">导出名单</el-button><el-button @click="exportSummary">导出汇总表</el-button></div>
         </div>
       </template>
 
@@ -436,11 +437,21 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+    <el-dialog v-model="detailVisible" title="导入批次详情" width="min(960px, 94vw)">
+      <template v-if="batchDetail"><el-descriptions :column="2" border><el-descriptions-item label="批次">{{ batchDetail.batch_id }}</el-descriptions-item><el-descriptions-item label="操作人">{{ batchDetail.operator }}</el-descriptions-item><el-descriptions-item label="文件">{{ batchDetail.file_name }}</el-descriptions-item><el-descriptions-item label="状态">{{ batchDetail.status }}</el-descriptions-item><el-descriptions-item label="新增 / 更新">{{ batchDetail.new_count }} / {{ batchDetail.update_count }}</el-descriptions-item><el-descriptions-item label="错误数">{{ batchDetail.error_count }}</el-descriptions-item></el-descriptions>
+      <el-table :data="batchDetail.records" max-height="360" empty-text="暂无记录明细"><el-table-column prop="row_index" label="行号" width="80" /><el-table-column prop="target_model" label="目标表" /><el-table-column prop="action" label="操作" /><el-table-column prop="errors" label="错误" /></el-table><p>最多展示前 100 条记录。</p></template>
+    </el-dialog>
+    <el-dialog v-model="exportDialogVisible" title="导出数据库学生名单" width="min(700px,94vw)">
+      <el-form label-width="100px"><el-form-item label="年级筛选"><el-input v-model="exportConfig.filters.grade" placeholder="留空表示全部年级" /></el-form-item><el-form-item label="专业筛选"><el-input v-model="exportConfig.filters.major" placeholder="留空表示全部专业" /></el-form-item><el-form-item label="导出字段"><el-select v-model="exportConfig.fields" multiple filterable style="width:100%"><el-option-group v-for="group in exportFields" :key="group.module" :label="group.module"><el-option v-for="field in group.fields" :key="field.field_code" :value="field.field_code" :label="field.field_name_cn" /></el-option-group></el-select></el-form-item></el-form>
+      <template #footer><el-button @click="exportDialogVisible = false">取消</el-button><el-button type="primary" :loading="exporting" @click="exportStudents">生成并下载</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { getAccessToken, refreshAccessToken } from '../services/apiClient'
+import { getSystemSettingsData } from '../services/dataService'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, CirclePlus, Edit, RefreshRight, CircleCheck, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import uploadService, { UPLOAD_API_BASE_URL } from '@/services/uploadService'
@@ -448,15 +459,20 @@ import exportService from '@/services/exportService'
 
 // 当前激活的 Tab
 const activeTab = ref('import')
+const listError = ref('')
+const detailVisible = ref(false)
+const batchDetail = ref(null)
+const exportDialogVisible = ref(false)
+const exportFields = ref([])
+const exporting = ref(false)
+const exportConfig = ref({ fields: [], filters: { grade: '', major: '' }, one_to_many_strategies: {}, field_aliases: {} })
 
 // 导入向导当前步骤
 const currentStep = ref(0)
 
 // 上传相关
 const uploadUrl = ref(`${UPLOAD_API_BASE_URL}/upload/file/`)
-const uploadHeaders = ref({
-  // Authorization: `Bearer ${localStorage.getItem('token')}`
-})
+const uploadHeaders = ref({})
 
 // 批次ID
 const batchId = ref('')
@@ -557,7 +573,9 @@ const exportRecordTotal = ref(0)
 const exportTemplateList = ref([])
 
 // 文件上传前验证
-const beforeUpload = (file) => {
+const beforeUpload = async (file) => {
+  try { await refreshAccessToken(); uploadHeaders.value = { Authorization: `Bearer ${getAccessToken()}` } }
+  catch (error) { ElMessage.error(error.message); return false }
   const isValidType = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                        'application/vnd.ms-excel',
                        'text/csv'].includes(file.type)
@@ -700,8 +718,9 @@ const loadBatchList = async () => {
 }
 
 // 查看批次详情
-const viewBatchDetail = (batch) => {
-  ElMessage.info('查看批次详情: ' + batch.batch_id)
+const viewBatchDetail = async (batch) => {
+  try { batchDetail.value = await uploadService.getBatchDetail(batch.id); detailVisible.value = true }
+  catch (error) { ElMessage.error(error.message) }
 }
 
 // 撤销批次
@@ -724,13 +743,26 @@ const revertBatch = async (batch) => {
 }
 
 // 保存为模板
-const saveAsTemplate = () => {
-  ElMessage.info('保存为模板功能待实现')
+const saveAsTemplate = async () => {
+  const sheet = identificationResults.value.find(item => mappingData.value.some(row => row.sheet_name === item.sheet_name && row.target_field))
+  if (!sheet) { ElMessage.warning('请先上传文件并配置字段映射'); return }
+  try {
+    const { value: name } = await ElMessageBox.prompt('输入模板名称，将保存当前第一个已映射工作表的配置', '保存映射模板', { inputPattern: /\S+/, inputErrorMessage: '请输入名称' })
+    const mapping = Object.fromEntries(mappingData.value.filter(row => row.sheet_name === sheet.sheet_name && row.target_field).map(row => [row.file_column, row.target_field]))
+    await uploadService.saveTemplate(name.trim(), sheet.best_match, mapping)
+    templateList.value = (await uploadService.getTemplateList()).results
+    ElMessage.success('映射模板已保存到数据库')
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message) }
 }
 
 // 删除模板
-const deleteTemplate = (template) => {
-  ElMessage.info('删除模板: ' + template.name)
+const deleteTemplate = async (template) => {
+  try {
+    await ElMessageBox.confirm('确认删除模板“' + template.name + '”？', '删除模板')
+    await uploadService.deleteTemplate(template.id)
+    templateList.value = (await uploadService.getTemplateList()).results
+    ElMessage.success('模板已删除')
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message) }
 }
 
 // 加载导出记录
@@ -745,9 +777,8 @@ const loadExportRecords = async () => {
 }
 
 // 下载导出文件
-const downloadExportFile = (record) => {
-  const downloadUrl = exportService.getDownloadUrl(record.record_id)
-  window.open(downloadUrl, '_blank')
+const downloadExportFile = async (record) => {
+  try { await exportService.downloadFile(record.record_id) } catch (error) { ElMessage.error(error.message) }
 }
 
 // 获取导出状态类型
@@ -772,13 +803,19 @@ const loadExportTemplates = async () => {
 }
 
 // 显示保存导出模板对话框
-const showSaveExportTemplate = () => {
-  ElMessage.info('保存导出模板功能待实现')
+const showSaveExportTemplate = async () => {
+  if (!exportConfig.value.fields.length) { exportDialogVisible.value = true; ElMessage.info('请先选择导出字段'); return }
+  try {
+    const { value: name } = await ElMessageBox.prompt('输入模板名称，保存当前导出字段与筛选条件', '保存导出模板', { inputPattern: /\S+/, inputErrorMessage: '请输入名称' })
+    await exportService.saveExportTemplate({ name: name.trim(), ...exportConfig.value })
+    await loadExportTemplates(); ElMessage.success('导出模板已保存到数据库')
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message) }
 }
 
 // 使用导出模板
 const useExportTemplate = (template) => {
-  ElMessage.info('使用模板: ' + template.name)
+  exportConfig.value = { fields: [...template.fields], filters: { grade: '', major: '', ...template.filters }, field_aliases: template.field_aliases || {}, one_to_many_strategies: template.one_to_many_strategy || {} }
+  exportDialogVisible.value = true
 }
 
 // 删除导出模板
@@ -814,13 +851,37 @@ const getBatchStatusType = (status) => {
   return typeMap[status] || 'info'
 }
 
-onMounted(() => {
-  // 暂时不加载数据，避免后端未启动时的错误提示
-  // 如果需要启用这些功能，请先启动后端服务器：cd backend && python manage.py runserver
-  // loadBatchList()
-  // loadExportRecords()
-  // loadExportTemplates()
-})
+async function exportStudents() {
+  if (exporting.value) return
+  if (!exportConfig.value.fields.length) { ElMessage.warning('请选择导出字段'); return }
+  exporting.value = true
+  try {
+    const result = await exportService.exportStudentList(exportConfig.value)
+    await exportService.downloadFile(result.record_id)
+    exportDialogVisible.value = false
+    await loadExportRecords(); ElMessage.success('已从数据库生成导出文件')
+  } catch (error) { ElMessage.error(error.message) }
+  finally { exporting.value = false }
+}
+async function exportSummary() {
+  try { const result = await exportService.exportSummaryTable(exportConfig.value.filters); await exportService.downloadFile(result.record_id); await loadExportRecords() }
+  catch (error) { ElMessage.error(error.message) }
+}
+async function reloadDatabaseLists() {
+  listError.value = ''
+  try {
+    const settings = await getSystemSettingsData()
+    batchPageSize.value = settings.values.batch_page_size
+    const [batches, templates, records, exportTemplates, fields] = await Promise.all([
+      uploadService.getBatchList(batchPage.value, batchPageSize.value), uploadService.getTemplateList(), exportService.getExportRecords(exportRecordPage.value, exportRecordPageSize.value), exportService.getExportTemplates(), exportService.getExportableFields(),
+    ])
+    batchList.value = batches.results; batchTotal.value = batches.total
+    templateList.value = templates.results; exportRecordList.value = records.results; exportRecordTotal.value = records.total
+    exportTemplateList.value = exportTemplates.results; exportFields.value = fields.fields
+  } catch (error) { listError.value = error.message }
+}
+onMounted(reloadDatabaseLists)
+
 </script>
 
 <style scoped>

@@ -1,12 +1,15 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <FeatureWorkspace v-if="config" :config="config" />
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import FeatureWorkspace from '../components/FeatureWorkspace.vue'
-import { getTrainingCourseData } from '../services/mockDataService'
+import { getTrainingCourseData } from '../services/dataService'
 
-export default {
+export default withDatabasePage({
   components: { FeatureWorkspace },
   data() {
     return {
@@ -16,5 +19,5 @@ export default {
   async mounted() {
     this.config = await getTrainingCourseData()
   },
-}
+})
 </script>

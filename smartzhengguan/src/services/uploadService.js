@@ -1,7 +1,7 @@
 /**
  * R05: 数据上传服务
  */
-import axios from 'axios'
+import axios from './httpClient'
 
 export const UPLOAD_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 const API_BASE_URL = UPLOAD_API_BASE_URL

@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div v-if="pageData" class="personal-page">
     <div class="page-header">
       <div class="header-left">
@@ -29,7 +30,7 @@
             <span class="card-title">个人资料</span>
             <div class="header-actions">
               <el-button @click="resetProfile">重置</el-button>
-              <el-button type="primary" class="primary-btn" @click="saveProfile">保存资料</el-button>
+              <el-button type="primary" class="primary-btn" :loading="saving" @click="saveProfile">保存资料</el-button>
             </div>
           </div>
           <el-form :model="profile" label-width="90px" class="profile-form">
@@ -41,7 +42,7 @@
               </el-col>
               <el-col :span="12">
                 <el-form-item label="角色">
-                  <el-input v-model="profile.role" />
+                  <el-input v-model="profile.role" disabled />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
@@ -51,7 +52,7 @@
               </el-col>
               <el-col :span="12">
                 <el-form-item label="工号">
-                  <el-input v-model="profile.jobNo" />
+                  <el-input v-model="profile.jobNo" disabled />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
@@ -93,7 +94,7 @@
               v-for="item in pageData.quickActions"
               :key="item.label"
               class="quick-item"
-              @click="showComingSoon(item.label)"
+              @click="$router.push(item.route)"
             >
               <span class="quick-label">{{ item.label }}</span>
               <span class="quick-desc">{{ item.desc }}</span>
@@ -141,82 +142,31 @@
       </el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import DashboardCard from '../components/DashboardCard.vue'
-import { getPersonalCenterData } from '../services/mockDataService'
-
-export default {
+import { getPersonalCenterData } from '../services/dataService'
+import { saveProfile } from '../services/accountService'
+export default withDatabasePage({
   components: { DashboardCard },
-  data() {
-    return {
-      pageData: null,
-      baseProfile: null,
-      profile: {
-        name: '',
-        role: '',
-        department: '',
-        jobNo: '',
-        phone: '',
-        email: '',
-        lastLogin: '',
-      },
-    }
-  },
-  async mounted() {
-    this.pageData = await getPersonalCenterData()
-    this.baseProfile = { ...this.pageData.profile }
-    this.profile = { ...this.pageData.profile }
-    this.loadProfile()
-  },
+  data() { return { pageData: null, baseProfile: null, profile: { name: '', role: '', department: '', jobNo: '', phone: '', email: '', lastLogin: '' }, saving: false } },
+  async mounted() { await this.loadProfile() },
   methods: {
-    loadProfile() {
-      const storedUser = localStorage.getItem('mock-user')
-      const storedProfile = localStorage.getItem('mock-user-profile')
-
-      if (storedUser) {
-        try {
-          const user = JSON.parse(storedUser)
-          this.profile = {
-            ...this.profile,
-            name: user.name || this.profile.name,
-            role: user.role || this.profile.role,
-          }
-        } catch (error) {
-          console.warn('用户信息读取失败', error)
-        }
-      }
-
-      if (storedProfile) {
-        try {
-          this.profile = {
-            ...this.profile,
-            ...JSON.parse(storedProfile),
-          }
-        } catch (error) {
-          console.warn('个人资料读取失败', error)
-        }
-      }
+    applyData(data) { this.pageData = data; this.baseProfile = { ...data.profile }; this.profile = { ...data.profile } },
+    async loadProfile() { this.applyData(await getPersonalCenterData()) },
+    async saveProfile() {
+      if (this.saving) return
+      this.saving = true
+      try { this.applyData(await saveProfile(this.profile)); window.dispatchEvent(new Event('account-updated')); this.$message.success('个人资料已保存到数据库') }
+      catch (error) { this.$message.error(error.message) }
+      finally { this.saving = false }
     },
-    saveProfile() {
-      localStorage.setItem('mock-user', JSON.stringify({
-        name: this.profile.name,
-        role: this.profile.role,
-      }))
-      localStorage.setItem('mock-user-profile', JSON.stringify(this.profile))
-      window.dispatchEvent(new Event('mock-user-updated'))
-      if (this.$message) this.$message.success('个人资料已保存')
-    },
-    resetProfile() {
-      this.profile = { ...this.baseProfile }
-      this.loadProfile()
-    },
-    showComingSoon(label) {
-      if (this.$message) this.$message.info(`${label} 功能待补充`)
-    },
+    resetProfile() { this.profile = { ...this.baseProfile } },
   },
-}
+})
 </script>
 
 <style scoped>

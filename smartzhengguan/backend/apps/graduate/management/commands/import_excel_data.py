@@ -354,79 +354,15 @@ class Command(BaseCommand):
         return self.build_student_context()
 
     def import_academic_records(self, workbook, student_context):
+        # This workbook contains yearly totals, not identified student events.
+        # Assigning those totals to arbitrary students fabricates personal histories.
         rows = self.sheet_rows(workbook, "学籍管理")
-        students = student_context["all"]
-        if not rows or not students:
+        if rows:
+            self.stdout.write(self.style.WARNING(
+                "学籍管理为年度汇总表，已跳过个人异动生成；个人异动须通过含学号、日期及审批依据的明细导入。"
+            ))
+        else:
             self.stdout.write("Academic status sheets skipped")
-            return
-
-        events = []
-        requests = []
-        event_counter = 1
-        request_counter = 1
-        all_students = students
-
-        for row in rows:
-            year = int(row["年份"])
-            changes = [
-                ("休学", int(row["休学人数"]), WorkflowStatus.COMPLETED),
-                ("复学", int(row["复学人数"]), WorkflowStatus.COMPLETED),
-                ("退学", int(row["退学人数"]), WorkflowStatus.COMPLETED),
-                ("延期毕业", int(row["延毕人数"]), WorkflowStatus.IN_PROGRESS),
-                ("其他异动", int(row["其他异动人数"]), WorkflowStatus.PENDING),
-            ]
-
-            student_offset = year * 17
-            for change_type, count, default_status in changes:
-                for item_index in range(count):
-                    student = all_students[(student_offset + item_index) % len(all_students)]
-                    occurred_on = date(year, min(12, 1 + (item_index % 12)), 1 + (item_index % 27))
-                    event_status = default_status
-                    request_status = (
-                        WorkflowStatus.PENDING
-                        if item_index % 8 == 0 and default_status != WorkflowStatus.COMPLETED
-                        else default_status
-                    )
-                    events.append(
-                        AcademicStatusEvent(
-                            external_id=f"AS{year}{event_counter:05d}",
-                            student=student,
-                            student_name=student.name,
-                            change_type=change_type,
-                            handler_name="研究生院学籍办",
-                            reason=f"{change_type}业务导入记录",
-                            occurred_on=occurred_on,
-                            status=event_status,
-                            status_tag=self.workflow_tag(event_status),
-                        )
-                    )
-                    submitted_at = self.make_aware_datetime(
-                        year,
-                        min(12, 1 + (item_index % 12)),
-                        2 + (item_index % 26),
-                        10,
-                    )
-                    reviewed_at = submitted_at + timedelta(days=5) if request_status == WorkflowStatus.COMPLETED else None
-                    requests.append(
-                        AcademicChangeRequest(
-                            student=student,
-                            student_name=student.name,
-                            change_type=change_type,
-                            current_step=self.change_step(change_type, request_status),
-                            status=request_status,
-                            status_type=self.workflow_tag(request_status),
-                            submitted_at=submitted_at,
-                            reviewed_at=reviewed_at,
-                            remark=f"Excel 导入生成的{change_type}申请",
-                        )
-                    )
-                    event_counter += 1
-                    request_counter += 1
-
-        AcademicStatusEvent.objects.bulk_create(events, batch_size=500)
-        AcademicChangeRequest.objects.bulk_create(requests, batch_size=500)
-        self.stdout.write(f"Imported {len(events)} academic status events")
-        self.stdout.write(f"Imported {len(requests)} academic change requests")
 
     def import_admission_data(self, workbook):
         rows = self.sheet_rows(workbook, "招生管理-年度汇总")

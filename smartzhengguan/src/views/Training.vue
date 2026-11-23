@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="training-page">
     <el-row :gutter="16" class="stat-row">
       <el-col :span="6" v-for="card in statCards" :key="card.title">
@@ -74,7 +75,7 @@
           <div class="card-header">
             <span class="card-title">培养计划列表</span>
             <div class="card-header-right">
-              <el-button class="export-table-btn" size="small" text @click="exportTable">导出Excel</el-button>
+              <el-button class="export-table-btn" size="small" text @click="exportTable">导出CSV</el-button>
             </div>
           </div>
           <div class="table-wrapper">
@@ -117,12 +118,15 @@
       </el-col>
     </el-row>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { withDatabasePage } from '../utils/databasePage'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
-import { getTrainingData } from '../services/mockDataService'
+import { getTrainingData } from '../services/dataService'
+import { downloadCsv } from '../utils/interactionHelpers'
 
 const CARD_META = [
   { icon: 'layers', iconBg: '#EEF4FF' },
@@ -152,7 +156,7 @@ const EMPTY_PAGE_DATA = {
   todos: [],
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard },
   data() {
     return {
@@ -506,13 +510,15 @@ export default {
       this.filters = { ...(data.filters?.default || EMPTY_PAGE_DATA.filters.default) }
     },
     handleRowClick(row) {
-      if (this.$message) this.$message.info(`查看 ${row.name} 的培养计划详情`)
+      this.$msgbox({ title: '培养计划详情', message: Object.entries(row).map(([key, value]) => key + '：' + String(value ?? '')).join('\n') })
     },
     exportTable() {
-      if (this.$message) this.$message.success('表格数据导出中...')
+      const columns = [{ key: 'name', label: '姓名' }, { key: 'grade', label: '年级' }, { key: 'major', label: '专业' }, { key: 'stage', label: '阶段' }, { key: 'status', label: '状态' }, { key: 'completion', label: '完成率' }]
+      downloadCsv('培养计划.csv', columns, this.filteredPlans)
+      this.$message.success('已导出当前筛选的数据库记录')
     },
   },
-}
+})
 </script>
 
 <style scoped>

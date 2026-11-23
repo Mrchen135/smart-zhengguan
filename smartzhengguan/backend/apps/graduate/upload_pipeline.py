@@ -150,7 +150,7 @@ def prepare_import(batch, strategy):
         if sheet['module'] == 'student':
             for row in sources[sheet['sheet_name']][1:]:
                 record = mapped_row(sheet, row)
-                if all(record.get(f'student.{key}') for key in ('student_id', 'name', 'major', 'grade')):
+                if all(record.get(f'student.{key}') for key in ('student_id', 'name', 'major', 'grade')) and (record.get('student.gender') in ('男', '女') or known_students.get(str(record.get('student.student_id')))):
                     incoming_students[str(record['student.student_id'])] = record
     for sheet in plan['sheets']:
         name, module = sheet['sheet_name'], sheet['module']
@@ -174,6 +174,10 @@ def prepare_import(batch, strategy):
                     for required in ('student_id', 'name', 'major', 'grade'):
                         if not values.get(required):
                             raise ValueError(f'缺少必填字段：{required}')
+                    if values.get('gender', student.gender if student else '') not in ('男', '女'):
+                        raise ValueError('性别为必填项，请从学生基本信息来源补齐男/女后再导入')
+                    if 'gender' in values:
+                        values['gender_source'] = 'student_import'
                     existing = student
                     key = (sid,)
                 else:

@@ -1,0 +1,10 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {readFile} from 'node:fs/promises'
+const source=await readFile(new URL('../src/utils/cohortComparisonCharts.js',import.meta.url),'utf8')
+const {comparisonContext,buildComparisonCharts}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))
+const row=(grade,extra={})=>({id:grade,grade,major:'国际关系',totalStudents:10,maleCount:4,femaleCount:6,graduatedCount:0,activeCount:10,snapshotCount:10,trainingCoverageCount:10,courseAverage:80,creditCompletionRate:40,researchTaskCompletionRate:50,attendanceRate:90,trainingCompletionRate:45,awardRate:30,researchOutputCount:5,destinations:[{key:'in_study',label:'在读',count:10}],...extra})
+test('major-only comparison uses chronological grades, not repeated major labels',()=>{const c=comparisonContext([row('2025级'),row('2023级')]);assert.equal(c.acrossGrades,true);assert.deepEqual(c.rows.map(c.label),['2023级','2025级']);assert.equal(buildComparisonCharts(c.rows).length,6)})
+test('destination counts conserve population and employment denominator excludes active students',()=>{const charts=buildComparisonCharts([row('2025级'),row('2023级',{graduatedCount:10,activeCount:0,destinations:[{key:'employment',label:'就业',count:7},{key:'civil_service',label:'考公',count:3}]})]);assert.match(charts[0].conclusion,/70%/);for(let i=0;i<2;i++)assert.equal(charts[0].options.series.reduce((n,s)=>n+s.data[i].value,0),100)})
+test('missing snapshots do not appear as zero performance; scatter uses per-person output',()=>{const charts=buildComparisonCharts([row('2025级',{snapshotCount:0}),row('2023级')]);assert.equal(charts[4].options.series[0].data.length,1);assert.equal(charts[4].options.series[0].data[0].value[1],.5);assert.equal(charts[2].options.series[0].data.length,1)})
+test('chart selections retain group ids and safely escape tooltip labels',()=>{const charts=buildComparisonCharts([row('2025级')]);assert.equal(charts[0].options.series[0].data[0].entityId,'2025级');assert.ok(!charts[0].options.tooltip.formatter([{name:'<img>',seriesName:'<script>',data:{count:10},value:100}]).includes('<img>'))})

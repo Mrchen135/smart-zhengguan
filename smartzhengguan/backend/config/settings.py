@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.accounts",
     "apps.graduate",
+    "apps.employmenthub",
 ]
 
 MIDDLEWARE = [
@@ -126,6 +127,7 @@ CORS_ALLOWED_ORIGINS = csv_env(
 
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "CHECK_REVOKE_TOKEN": True,
 }
 
 DEFAULT_PREDICTION_KNOWLEDGE_DIRS = "knowledge/prediction,../\u7814\u7a76\u751f\u6587\u4ef6\u89c4\u5b9a"
@@ -183,3 +185,8 @@ PUBLIC_API_RATE_LIMIT_META = int_env("PUBLIC_API_RATE_LIMIT_META", 120)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "SAMEORIGIN"
+
+# Isolated, fictional-data privacy showcase. Cloud calls require this opt-in
+# as well as the existing PREDICTION_LLM_* configuration.
+PRIVACY_DEMO_ALLOW_CLOUD = bool_env("PRIVACY_DEMO_ALLOW_CLOUD", False)
+PRIVACY_DEMO_MIN_GROUP_SIZE = max(5, int_env("PRIVACY_DEMO_MIN_GROUP_SIZE", 5))

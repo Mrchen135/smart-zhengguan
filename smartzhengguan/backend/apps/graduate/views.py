@@ -8,7 +8,7 @@ from django.conf import settings
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -42,12 +42,19 @@ logger = logging.getLogger(__name__)
 
 
 class GraduateBaseView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "public_read"
     builder = None
 
     def get(self, request):
-        return Response(self.builder())
+        payload = self.builder()
+        notices = payload.get('notices', [])
+        if notices:
+            from apps.common.models import NoticeRead
+            read_ids = set(NoticeRead.objects.filter(user=request.user).values_list('notice_id', flat=True))
+            for notice in notices:
+                notice['read'] = notice.get('id') in read_ids
+        return Response(payload)
 
 
 class SharedOptionsView(GraduateBaseView):
@@ -100,7 +107,7 @@ class IntelligentPredictionDataView(GraduateBaseView):
 
 
 class PredictionContextView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "prediction_context"
 
     def get(self, request):
@@ -118,7 +125,7 @@ class PredictionContextView(PredictionApiSecurityMixin, APIView):
 
 
 class PredictionAnalyzeView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "prediction_analyze"
 
     def post(self, request):
@@ -141,7 +148,7 @@ class PredictionAnalyzeView(PredictionApiSecurityMixin, APIView):
 
 
 class PredictionChatView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "prediction_chat"
 
     def post(self, request):
@@ -172,7 +179,7 @@ class PredictionChatStreamView(PredictionApiSecurityMixin, APIView):
     事件格式：每行 `data: {...}\n\n`，最后以 `data: [DONE]` 收尾。
     """
 
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "prediction_chat"
 
     def post(self, request):
@@ -217,7 +224,7 @@ class PredictionChatStreamView(PredictionApiSecurityMixin, APIView):
 
 
 class GlobalSearchView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "public_search"
 
     def get(self, request):
@@ -227,7 +234,7 @@ class GlobalSearchView(PredictionApiSecurityMixin, APIView):
 
 
 class CrossModuleQueryView(PredictionApiSecurityMixin, APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     security_scope = "public_query"
 
     def get(self, request):
@@ -247,7 +254,7 @@ class CrossModuleQueryView(PredictionApiSecurityMixin, APIView):
 # ============================================================
 
 class UploadFileView(APIView):
-    permission_classes = []  # 临时禁用认证，方便测试
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """文件上传接口"""
@@ -310,20 +317,12 @@ class UploadFileView(APIView):
             )
 
         # 创建导入批次
-        # 获取或创建一个默认用户用于测试
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        test_user, created = User.objects.get_or_create(
-            username='test_admin',
-            defaults={'email': 'test@example.com', 'role': 'admin'}
-        )
-
         import_batch = ImportBatch.objects.create(
             batch_id=batch_id,
             file_name=file_name,
             file_hash=file_hash,
             status=ImportBatchStatus.DRAFT,
-            operator=test_user,  # 使用测试用户
+            operator=request.user,
             started_at=timezone.now()
         )
 
@@ -337,7 +336,7 @@ class UploadFileView(APIView):
 
 
 class SheetIdentifyView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """Sheet 模块识别接口"""
@@ -384,7 +383,7 @@ class SheetIdentifyView(APIView):
 
 
 class FieldMappingView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """字段映射接口"""
@@ -448,7 +447,7 @@ class FieldMappingView(APIView):
 
 
 class ValidateAndPreviewView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """校验和预览接口"""
@@ -485,7 +484,7 @@ class ValidateAndPreviewView(APIView):
 
 
 class ConfirmImportView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """确认导入接口"""
@@ -518,7 +517,7 @@ class ConfirmImportView(APIView):
 
 
 class ImportBatchListView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取导入批次列表"""
@@ -563,7 +562,7 @@ class ImportBatchListView(APIView):
 
 
 class ImportBatchDetailView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         """获取导入批次详情"""
@@ -611,7 +610,7 @@ class ImportBatchDetailView(APIView):
 
 
 class RevertBatchView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """撤销批次导入"""
@@ -638,7 +637,7 @@ class RevertBatchView(APIView):
 
 
 class MappingTemplateView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取映射模板列表"""
@@ -714,7 +713,7 @@ class MappingTemplateView(APIView):
 # ============================================================
 
 class ExportFieldsView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取可导出字段列表"""
@@ -723,7 +722,7 @@ class ExportFieldsView(APIView):
 
 
 class StudentListExportView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """导出学生名单"""
@@ -738,12 +737,19 @@ class StudentListExportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        from .models import FieldCatalog
+        allowed_fields = set(FieldCatalog.objects.filter(is_active=True, is_exportable=True).values_list('field_code', flat=True))
+        if not isinstance(fields, list) or len(fields) > 100 or any(not isinstance(field, str) or field not in allowed_fields for field in fields):
+            return Response({'error': '导出字段必须来自可导出字段目录，且不超过 100 项'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(filters, dict) or not isinstance(one_to_many_strategies, dict) or not isinstance(field_aliases, dict):
+            return Response({'error': '筛选条件与字段配置格式不正确'}, status=status.HTTP_400_BAD_REQUEST)
+
         # 预计人数
         students = export_services.build_student_queryset(filters, request.user)
         estimated_count = students.count()
 
         # 小数据量同步生成
-        if estimated_count < 5000:
+        if estimated_count <= 10000:
             try:
                 result = export_services.generate_student_list_excel(
                     fields,
@@ -765,16 +771,11 @@ class StudentListExportView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         else:
-            # 大数据量返回任务ID
-            return Response({
-                'status': 'pending',
-                'estimated_count': estimated_count,
-                'message': '数据量较大，请稍后查看导出记录'
-            })
+            return Response({'error': '单次最多导出 10000 条，请按年级或专业筛选后重试'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SummaryTableExportView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """导出汇总表"""
@@ -799,7 +800,7 @@ class SummaryTableExportView(APIView):
 
 
 class ExportRecordListView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取导出记录列表"""
@@ -851,7 +852,7 @@ class ExportRecordListView(APIView):
 
 
 class ExportTemplateView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取导出模板列表"""
@@ -870,6 +871,8 @@ class ExportTemplateView(APIView):
                 'is_public': template.is_public,
                 'fields': template.fields,
                 'filters': template.filters,
+                'field_aliases': template.field_aliases,
+                'one_to_many_strategy': template.one_to_many_strategy,
                 'created_at': template.created_at.isoformat(),
             })
 
@@ -932,7 +935,7 @@ class ExportTemplateView(APIView):
 # ============================================================
 
 class WarningRuleListView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取预警规则列表"""
@@ -1011,7 +1014,7 @@ class WarningRuleListView(APIView):
 
 
 class WarningRuleDetailView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         """获取规则详情"""
@@ -1106,7 +1109,7 @@ class WarningRuleDetailView(APIView):
 
 
 class WarningScanView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """触发预警扫描"""
@@ -1125,7 +1128,7 @@ class WarningScanView(APIView):
 
 
 class WarningInstanceListView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取预警列表"""
@@ -1192,7 +1195,7 @@ class WarningInstanceListView(APIView):
 
 
 class WarningInstanceDetailView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         """获取预警详情"""
@@ -1250,7 +1253,7 @@ class WarningInstanceDetailView(APIView):
 
 
 class WarningTreatmentView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
         """处理预警"""
@@ -1340,7 +1343,7 @@ class WarningTreatmentView(APIView):
 
 
 class WarningStatsView(APIView):
-    permission_classes = []  # 临时禁用认证
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """获取预警统计数据"""

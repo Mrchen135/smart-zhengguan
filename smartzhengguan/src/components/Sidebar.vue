@@ -7,6 +7,8 @@
       text-color="rgba(255,255,255,0.75)"
       active-text-color="#fff"
       class="side-menu"
+      :collapse="isCollapsed"
+      :collapse-transition="false"
     >
       <el-menu-item index="/home">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -68,14 +70,18 @@
         <span>奖助管理</span>
       </el-menu-item>
 
-      <el-menu-item index="/employment">
+      <el-sub-menu index="employment-menu">
+        <template #title>
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="7" width="20" height="14" rx="2" />
           <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
           <circle cx="12" cy="14" r="2" />
         </svg>
         <span>就业管理</span>
-      </el-menu-item>
+        </template>
+        <el-menu-item index="/employment-opportunities">就业信息中心</el-menu-item>
+        <el-menu-item index="/employment">就业统计分析</el-menu-item>
+      </el-sub-menu>
 
       <el-menu-item index="/intelligent-prediction">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -91,7 +97,13 @@
         </svg>
         <span>智能预测</span>
       </el-menu-item>
-
+      <el-menu-item index="/privacy-collaboration">
+        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7z" />
+          <path d="m8 12 3 3 5-6" />
+        </svg>
+        <span>隐私协同</span>
+      </el-menu-item>
       <el-menu-item index="/data-management">
         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -103,6 +115,15 @@
     </el-menu>
   </div>
 </template>
+
+<script>
+export default {
+  data() { return { isCollapsed: window.innerWidth <= 1200 } },
+  mounted() { window.addEventListener('resize', this.updateCollapsed) },
+  beforeUnmount() { window.removeEventListener('resize', this.updateCollapsed) },
+  methods: { updateCollapsed() { this.isCollapsed = window.innerWidth <= 1200 } },
+}
+</script>
 
 <style scoped>
 .sidebar { width: 200px; flex-shrink: 0; background: #0A2463; overflow-y: auto; }
@@ -130,6 +151,7 @@
 
 @media (max-width: 1200px) {
   .sidebar { width: 72px; }
+  .side-menu.el-menu--collapse { width: 72px; }
   .side-menu .el-menu-item,
   .side-menu :deep(.el-sub-menu__title) { justify-content: center; padding-left: 0 !important; }
   .side-menu .el-menu-item span,

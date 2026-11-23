@@ -3,6 +3,8 @@ import json
 import random
 import sys
 from collections import Counter
+from datetime import date
+from .repair_portrait_data import demo_gender
 from pathlib import Path
 
 from django.conf import settings
@@ -108,6 +110,9 @@ class Command(BaseCommand):
                             'name': row['姓名'], 'grade': row['年级'], 'major': row['专业'],
                             'college': row['学院'], 'advisor_name': row['导师'],
                             'degree_type': degree,
+                            **({'gender': demo_gender(row['学号']), 'gender_source': 'demo_expansion_v1',
+                                'expected_graduation_date': date(int(row['年级'][:4]) + (4 if degree == DegreeType.DOCTORAL else 3), 6, 30)}
+                               if not Student.objects.filter(student_id=str(row['学号']), gender__in=['男', '女']).exists() else {}),
                             'enrollment_type': EnrollmentType.DOCTORAL if degree == DegreeType.DOCTORAL else EnrollmentType.MASTER,
                         })
                     if created:

@@ -1,4 +1,5 @@
 <template>
+  <PageDataState :loading="dataLoading" :error="dataError" @retry="retryDatabasePage">
   <div class="admission-page">
     <div class="stats-grid">
       <DashboardCard
@@ -97,13 +98,16 @@
       </div>
     </el-dialog>
   </div>
+</PageDataState>
 </template>
 
 <script>
+import { readNotice } from '../services/accountService'
+import { withDatabasePage } from '../utils/databasePage'
 import * as echarts from 'echarts'
 import DashboardCard from '../components/DashboardCard.vue'
 import ChartCard from '../components/ChartCard.vue'
-import { getAdmissionData } from '../services/mockDataService'
+import { getAdmissionData } from '../services/dataService'
 
 const CHART_COLORS = ['#2F6BFF', '#58A6FF', '#D4A017', '#8B9BB4', '#34A853', '#F59E0B']
 const PIE_COLORS = ['#2F6BFF', '#58A6FF', '#D4A017', '#34A853', '#B0BEC5']
@@ -127,7 +131,7 @@ const EMPTY_PAGE_DATA = {
   notices: [],
 }
 
-export default {
+export default withDatabasePage({
   components: { DashboardCard, ChartCard },
   data() {
     return {
@@ -301,6 +305,7 @@ export default {
       this.progressDialogVisible = true
     },
     openNotice(item) {
+      readNotice(item).catch(error => this.$message?.error(error.message))
       this.activeNotice = item
       this.noticeDialogVisible = true
     },
@@ -325,7 +330,7 @@ export default {
       return '#D1D5DB'
     },
   },
-}
+})
 </script>
 
 <style scoped>
